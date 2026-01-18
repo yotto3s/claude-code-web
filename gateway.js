@@ -52,6 +52,8 @@ function createSessionToken(username, userInfo) {
 
 function verifySessionToken(token) {
   if (!token) return null;
+  // URL-decode the token in case browser encoded it
+  token = decodeURIComponent(token);
   const [data, signature] = token.split('.');
   if (!data || !signature) return null;
   
@@ -134,7 +136,7 @@ app.post('/api/login', async (req, res) => {
   };
 
   const token = createSessionToken(username, userInfo);
-  
+
   userSessions.set(username, {
     token,
     userInfo
@@ -215,24 +217,61 @@ async function proxyAuth(req, res, next) {
 app.all('/api/*', proxyAuth, (req, res) => {
   const target = req.proxyTarget;
   const targetUrl = `http://${target.ip}:${target.port}`;
-  
+
   console.log(`Proxying ${req.method} ${req.path} -> ${targetUrl}`);
-  
-  proxy.web(req, res, {
-    target: targetUrl
-  }, (err) => {
-    console.error(`Proxy error for ${req.path}:`, err.message);
-    if (!res.headersSent) {
-      res.status(502).json({ error: 'Bad Gateway - Host server not responding' });
-    }
-  });
+
+  // Fix: express.json() consumes the body, so we need to re-attach it for the proxy
+  if (req.body && Object.keys(req.body).length > 0) {
+    const bodyData = JSON.stringify(req.body);
+    req.headers['content-length'] = Buffer.byteLength(bodyData);
+
+    // Store for proxy to use
+    proxy.web(req, res, {
+      target: targetUrl,
+      buffer: require('stream').Readable.from([bodyData])
+    }, (err) => {
+      console.error(`Proxy error for ${req.path}:`, err.message);
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'Bad Gateway - Host server not responding' });
+      }
+    });
+  } else {
+    proxy.web(req, res, {
+      target: targetUrl
+    }, (err) => {
+      console.error(`Proxy error for ${req.path}:`, err.message);
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'Bad Gateway - Host server not responding' });
+      }
+    });
+  }
 });
 
+// Auth middleware for page routes (redirects to login instead of 401)
+async function pageAuth(req, res, next) {
+  const sessionData = verifySessionToken(req.cookies.session);
+
+  if (!sessionData) {
+    return res.redirect('/login');
+  }
+
+  req.sessionData = sessionData;
+
+  const target = await getProxyTarget(sessionData);
+
+  if (!target) {
+    return res.status(500).send('Unable to connect to host server');
+  }
+
+  req.proxyTarget = target;
+  next();
+}
+
 // Proxy main page and other routes
-app.get('/', proxyAuth, (req, res) => {
+app.get('/', pageAuth, (req, res) => {
   const target = req.proxyTarget;
   const targetUrl = `http://${target.ip}:${target.port}`;
-  
+
   proxy.web(req, res, {
     target: targetUrl
   }, (err) => {
@@ -256,7 +295,7 @@ server.on('upgrade', async (req, socket, head) => {
   }
 
   const sessionData = verifySessionToken(cookies.session);
-  
+
   if (!sessionData) {
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
     socket.destroy();

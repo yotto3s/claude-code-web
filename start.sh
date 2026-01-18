@@ -73,43 +73,6 @@ fi
 echo ""
 echo "Step 2: Building gateway Docker image..."
 
-# Create a custom Dockerfile for gateway
-cat > Dockerfile.gateway << 'EOF'
-FROM node:20-bookworm-slim
-
-# Install Docker CLI and other tools
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash \
-    whois \
-    curl \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Remove node-pty from dependencies (not needed in gateway)
-RUN node -e "const p=require('./package.json'); delete p.dependencies['node-pty']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2))"
-
-# Install dependencies
-RUN npm install --production
-
-# Copy application files
-COPY gateway.js ./
-COPY src/ ./src/
-COPY public/ ./public/
-
-# Create data directory
-RUN mkdir -p /app/data && chmod 777 /app/data
-
-# Expose port
-EXPOSE 3000
-
-# Start gateway
-CMD ["node", "gateway.js"]
-EOF
-
 docker build -t ${GATEWAY_IMAGE} -f Dockerfile.gateway . 2>&1 | tail -20
 
 echo "  Gateway image built successfully"

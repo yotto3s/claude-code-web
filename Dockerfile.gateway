@@ -1,10 +1,13 @@
-FROM node:20-bookworm-slim
+FROM ubuntu:24.04
 
-# Install Docker CLI and other tools
+# Install tools including Python for password verification and Node.js
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     whois \
     curl \
+    python3 \
+    nodejs \
+    npm \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -19,7 +22,7 @@ RUN node -e "const p=require('./package.json'); delete p.dependencies['node-pty'
 RUN npm install --production
 
 # Copy application files
-COPY gateway-hybrid.js ./
+COPY gateway.js ./
 COPY src/ ./src/
 COPY public/ ./public/
 
@@ -30,4 +33,4 @@ RUN mkdir -p /app/data && chmod 777 /app/data
 EXPOSE 3000
 
 # Start gateway
-CMD ["node", "gateway-hybrid.js"]
+CMD ["node", "gateway.js"]
