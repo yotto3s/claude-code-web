@@ -1,0 +1,20 @@
+{
+  "name": "claude-code-web",
+  "version": "1.0.0",
+  "description": "Claude Code Web Interface - Browser-based access to Claude Code",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "add-user": "node scripts/add-user.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.16.0",
+    "uuid": "^9.0.1",
+    "cookie-parser": "^1.4.6"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

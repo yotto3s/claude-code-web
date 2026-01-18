@@ -1,0 +1,218 @@
+// WebSocket Client
+
+class WebSocketClient {
+  constructor(url) {
+    this.url = url;
+    this.ws = null;
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 5;
+    this.reconnectDelay = 1000;
+    this.handlers = {};
+    this.sessionId = null;
+  }
+
+  connect() {
+    return new Promise((resolve, reject) => {
+      try {
+        this.ws = new WebSocket(this.url);
+
+        this.ws.onopen = () => {
+          console.log('WebSocket connected');
+          this.reconnectAttempts = 0;
+          this.emit('connected');
+          resolve();
+        };
+
+        this.ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            this.handleMessage(msg);
+          } catch (err) {
+            console.error('Failed to parse message:', err);
+          }
+        };
+
+        this.ws.onclose = (event) => {
+          console.log('WebSocket closed:', event.code, event.reason);
+          this.emit('disconnected', { code: event.code, reason: event.reason });
+
+          // If unauthorized, redirect to login
+          if (event.code === 4001) {
+            window.location.href = '/login';
+            return;
+          }
+
+          // Attempt reconnection
+          if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            setTimeout(() => {
+              this.reconnectAttempts++;
+              console.log(`Reconnecting... (attempt ${this.reconnectAttempts})`);
+              this.connect().catch(() => {});
+            }, this.reconnectDelay * this.reconnectAttempts);
+          }
+        };
+
+        this.ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          this.emit('error', error);
+          reject(error);
+        };
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  handleMessage(msg) {
+    switch (msg.type) {
+      case 'connected':
+        this.emit('auth', msg.auth);
+        break;
+
+      case 'session_created':
+        this.sessionId = msg.session.id;
+        this.emit('session_created', msg.session);
+        break;
+
+      case 'session_joined':
+        this.sessionId = msg.session.id;
+        this.emit('session_joined', { session: msg.session, history: msg.history });
+        break;
+
+      case 'sessions_list':
+        this.emit('sessions_list', msg.sessions);
+        break;
+
+      case 'message_sent':
+        this.emit('message_sent');
+        break;
+
+      case 'message_start':
+        this.emit('message_start', msg.message);
+        break;
+
+      case 'content_start':
+        this.emit('content_start', msg);
+        break;
+
+      case 'chunk':
+        this.emit('chunk', { text: msg.text, index: msg.index });
+        break;
+
+      case 'content_stop':
+        this.emit('content_stop', { index: msg.index });
+        break;
+
+      case 'tool_input_delta':
+        this.emit('tool_input_delta', msg);
+        break;
+
+      case 'message_delta':
+        this.emit('message_delta', msg);
+        break;
+
+      case 'complete':
+        this.emit('complete', msg);
+        break;
+
+      case 'result':
+        this.emit('result', msg.data);
+        break;
+
+      case 'cancelled':
+        this.emit('cancelled');
+        break;
+
+      case 'error':
+        this.emit('error', { message: msg.message, code: msg.code });
+        break;
+
+      case 'text':
+        this.emit('text', msg.content);
+        break;
+
+      case 'system':
+        this.emit('system', msg.data);
+        break;
+
+      case 'process_closed':
+        this.emit('process_closed', { code: msg.code });
+        break;
+
+      default:
+        console.log('Unknown message type:', msg.type, msg);
+    }
+  }
+
+  send(type, data = {}) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.error('WebSocket not connected');
+      return false;
+    }
+
+    this.ws.send(JSON.stringify({ type, ...data }));
+    return true;
+  }
+
+  createSession(workingDirectory) {
+    return this.send('create_session', { workingDirectory });
+  }
+
+  joinSession(sessionId) {
+    return this.send('join_session', { sessionId });
+  }
+
+  listSessions() {
+    return this.send('list_sessions');
+  }
+
+  sendMessage(content) {
+    return this.send('message', { content });
+  }
+
+  cancel() {
+    return this.send('cancel');
+  }
+
+  on(event, handler) {
+    if (!this.handlers[event]) {
+      this.handlers[event] = [];
+    }
+    this.handlers[event].push(handler);
+    return this;
+  }
+
+  off(event, handler) {
+    if (this.handlers[event]) {
+      this.handlers[event] = this.handlers[event].filter(h => h !== handler);
+    }
+    return this;
+  }
+
+  emit(event, data) {
+    const handlers = this.handlers[event];
+    if (handlers) {
+      for (const handler of handlers) {
+        try {
+          handler(data);
+        } catch (err) {
+          console.error('Handler error:', err);
+        }
+      }
+    }
+  }
+
+  isConnected() {
+    return this.ws && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+}
+
+// Make available globally
+window.WebSocketClient = WebSocketClient;
