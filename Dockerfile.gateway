@@ -1,0 +1,38 @@
+# Claude Code Web Gateway
+# This container runs the gateway server that authenticates users
+# and spawns per-user containers via Docker socket
+FROM node:20-bookworm-slim
+
+# Install Docker CLI for spawning user containers
+# whois package provides mkpasswd for password verification (supports yescrypt)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    docker.io \
+    bash \
+    whois \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy package files and create a gateway-specific package.json
+# The gateway doesn't need node-pty (terminal support is in user containers)
+COPY package*.json ./
+RUN node -e "const p=require('./package.json'); delete p.dependencies['node-pty']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
+
+# Install dependencies (including http-proxy, but not node-pty)
+RUN npm install --production
+
+# Copy application source
+COPY gateway.js ./
+COPY server.js ./
+COPY src/ ./src/
+COPY public/ ./public/
+
+# Create data directory
+RUN mkdir -p /app/data && chmod 777 /app/data
+
+# Expose port
+EXPOSE 3000
+
+# Start the gateway server
+CMD ["node", "gateway.js"]

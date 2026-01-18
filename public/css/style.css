@@ -1087,11 +1087,92 @@ html, body {
 
 .terminal-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 0.5rem 1rem;
+  padding: 0 0.5rem;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
+  gap: 0.25rem;
+  height: 36px;
+}
+
+.terminal-tabs-wrapper {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  overflow: hidden;
+}
+
+.terminal-tabs {
+  display: flex;
+  overflow-x: auto;
+  gap: 2px;
+}
+
+.terminal-tabs::-webkit-scrollbar {
+  height: 0;
+}
+
+.terminal-tab {
+  display: flex;
+  align-items: center;
+  padding: 0.375rem 0.75rem;
+  background: var(--bg-secondary);
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  border-radius: 4px 4px 0 0;
+  gap: 0.5rem;
+  white-space: nowrap;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.terminal-tab:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.terminal-tab.active {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.terminal-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 2px;
+  padding: 0;
+}
+
+.terminal-tab-close:hover {
+  background: var(--error-color);
+  color: white;
+}
+
+.terminal-add-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+  flex-shrink: 0;
+}
+
+.terminal-add-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .terminal-title {

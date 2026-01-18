@@ -16,7 +16,7 @@ function parseCookies(cookieHeader) {
 
 function setupWebSocket(server) {
   // Import auth functions from server.js (they're exported)
-  const { verifySessionToken, USERS } = require('../server');
+  const { verifySessionToken, USERS, SINGLE_USER_MODE } = require('../server');
 
   const wss = new WebSocket.Server({
     server,
@@ -26,8 +26,8 @@ function setupWebSocket(server) {
   wss.on('connection', async (ws, req) => {
     const clientIP = getClientIP(req);
 
-    // Validate auth if users are configured
-    if (USERS.size > 0) {
+    // Validate auth if users are configured (not single-user mode)
+    if (!SINGLE_USER_MODE && USERS.size > 0) {
       const cookies = parseCookies(req.headers.cookie);
       console.log(`WebSocket cookie header: ${req.headers.cookie || '(none)'}`);
       const username = verifySessionToken(cookies.session);
@@ -39,7 +39,8 @@ function setupWebSocket(server) {
       ws.username = username;
       console.log(`WebSocket connected from ${clientIP} (user: ${username})`);
     } else {
-      console.log(`WebSocket connected from ${clientIP}`);
+      ws.username = process.env.USER || 'default';
+      console.log(`WebSocket connected from ${clientIP} (single-user mode)`);
     }
 
     // Session state for this connection

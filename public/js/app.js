@@ -34,6 +34,8 @@ class App {
       terminalToggleBtn: document.getElementById('terminal-toggle-btn'),
       terminalPanel: document.getElementById('terminal-panel'),
       terminalContainer: document.getElementById('terminal-container'),
+      terminalTabs: document.getElementById('terminal-tabs'),
+      terminalAddBtn: document.getElementById('terminal-add-btn'),
       terminalCloseBtn: document.getElementById('terminal-close-btn'),
       appContainer: document.querySelector('.app-container'),
       // Modal elements
@@ -50,17 +52,18 @@ class App {
       // Session picker elements
       sessionPicker: document.getElementById('session-picker'),
       sessionPickerList: document.getElementById('session-picker-list'),
-      sessionPickerNew: document.getElementById('session-picker-new')
+      sessionPickerNew: document.getElementById('session-picker-new'),
+      logoutBtn: document.getElementById('logout-btn')
     };
 
     // Setup event listeners
     this.setupEventListeners();
 
+    // Fetch home directory for browser first
+    await this.fetchHomeDirectory();
+
     // Connect WebSocket
     await this.connectWebSocket();
-
-    // Fetch home directory for browser
-    this.fetchHomeDirectory();
   }
 
   setupEventListeners() {
@@ -129,6 +132,16 @@ class App {
 
     // Terminal close button
     this.elements.terminalCloseBtn.addEventListener('click', () => this.closeTerminal());
+
+    // Terminal add button
+    if (this.elements.terminalAddBtn) {
+      this.elements.terminalAddBtn.addEventListener('click', () => this.createNewTerminal());
+    }
+
+    // Logout button
+    if (this.elements.logoutBtn) {
+      this.elements.logoutBtn.addEventListener('click', () => this.logout());
+    }
   }
 
   autoResizeTextarea() {
@@ -251,7 +264,13 @@ class App {
     this.updateSessionList(sessions);
     // Also update session picker if visible
     if (this.elements.sessionPicker.classList.contains('show')) {
-      this.renderSessionPicker(sessions);
+      // If no sessions, show the new session modal instead
+      if (sessions.length === 0) {
+        this.hideSessionPicker();
+        this.openNewSessionModal();
+      } else {
+        this.renderSessionPicker(sessions);
+      }
     }
   }
 
@@ -428,7 +447,7 @@ class App {
   // Modal methods
   openNewSessionModal() {
     this.elements.sessionMenu.classList.remove('show');
-    this.elements.workingDirectory.value = '';
+    this.elements.workingDirectory.value = this.currentBrowserPath || '';
     this.elements.directoryBrowser.classList.remove('show');
     this.elements.modal.classList.add('show');
     this.elements.workingDirectory.focus();
@@ -580,27 +599,60 @@ class App {
     if (!this.terminalManager.container) {
       this.terminalManager.initialize(
         this.elements.terminalContainer,
+        this.elements.terminalTabs,
         (msg) => this.ws.send(msg)
       );
     }
 
-    // Ensure terminal exists for current session
-    this.ensureTerminalForCurrentSession();
+    // Create a terminal if none exist, otherwise ensure one is active
+    if (this.terminalManager.getTerminalCount() === 0) {
+      this.createNewTerminal();
+    } else if (!this.terminalManager.activeTerminalId) {
+      // Switch to first available terminal
+      const firstId = Array.from(this.terminalManager.terminals.keys())[0];
+      if (firstId) {
+        this.terminalManager.switchToTerminal(firstId);
+      }
+    }
+
+    // Fit and focus terminal after a short delay
+    setTimeout(() => {
+      this.terminalManager.fit();
+      this.terminalManager.focus();
+    }, 100);
+  }
+
+  createNewTerminal() {
+    if (!this.currentWorkingDirectory) return;
+
+    // Initialize terminal manager if not already done
+    if (!this.terminalManager.container) {
+      this.terminalManager.initialize(
+        this.elements.terminalContainer,
+        this.elements.terminalTabs,
+        (msg) => this.ws.send(msg)
+      );
+    }
+
+    this.terminalManager.createTerminal(null, this.currentWorkingDirectory);
+
+    // Fit and focus terminal after a short delay
+    setTimeout(() => {
+      this.terminalManager.fit();
+      this.terminalManager.focus();
+    }, 100);
   }
 
   ensureTerminalForCurrentSession() {
+    // This method is kept for backward compatibility but now just opens terminal panel
     if (!this.currentSessionId) return;
 
-    // Check if terminal exists for this session
-    if (this.terminalManager.hasTerminal(this.currentSessionId)) {
-      // Switch to existing terminal
-      this.terminalManager.switchToTerminal(this.currentSessionId);
-    } else {
-      // Create new terminal for this session
-      this.terminalManager.createTerminal(
-        this.currentSessionId,
-        this.currentWorkingDirectory
-      );
+    // Create a terminal if none exist
+    if (this.terminalManager.getTerminalCount() === 0) {
+      this.createNewTerminal();
+    } else if (this.terminalManager.activeTerminalId) {
+      // Switch to active terminal
+      this.terminalManager.switchToTerminal(this.terminalManager.activeTerminalId);
     }
 
     // Fit and focus terminal after a short delay
@@ -614,6 +666,26 @@ class App {
     this.elements.terminalPanel.classList.remove('show');
     this.elements.terminalToggleBtn.classList.remove('active');
     this.elements.appContainer.classList.remove('terminal-open');
+  }
+
+  async logout() {
+    try {
+      const response = await fetch('/api/logout', {
+        method: 'POST',
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        // Clear local storage
+        localStorage.removeItem('sessionId');
+        // Redirect to login page
+        window.location.href = '/login';
+      } else {
+        console.error('Logout failed');
+      }
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
   }
 
   onTerminalCreated(data) {

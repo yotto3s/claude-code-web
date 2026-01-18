@@ -4,30 +4,42 @@ class TerminalManager {
   constructor() {
     this.terminals = new Map(); // Store multiple terminal instances
     this.container = null;
+    this.tabsContainer = null;
     this.sendCallback = null;
     this.activeTerminalId = null;
+    this.terminalCounter = 0;
+    this.onTabChange = null; // Callback when tabs change
   }
 
-  initialize(container, sendCallback) {
+  initialize(container, tabsContainer, sendCallback) {
     this.container = container;
+    this.tabsContainer = tabsContainer;
     this.sendCallback = sendCallback;
     console.log('Terminal manager initialized');
+  }
+
+  generateTerminalId() {
+    this.terminalCounter++;
+    return `term-${Date.now()}-${this.terminalCounter}`;
   }
 
   createTerminal(terminalId, cwd) {
     if (!this.sendCallback) {
       console.error('Terminal not initialized');
-      return;
+      return null;
+    }
+
+    // Generate ID if not provided
+    if (!terminalId) {
+      terminalId = this.generateTerminalId();
     }
 
     // Check if terminal already exists
     if (this.terminals.has(terminalId)) {
       console.log('Terminal already exists:', terminalId);
       this.switchToTerminal(terminalId);
-      return;
+      return terminalId;
     }
-
-    console.log('Creating new terminal:', terminalId);
 
     console.log('Creating new terminal:', terminalId);
 
@@ -71,7 +83,9 @@ class TerminalManager {
       fitAddon: fitAddon,
       id: terminalId,
       isConnected: false,
-      resizeTimeout: null
+      resizeTimeout: null,
+      cwd: cwd,
+      name: `Terminal ${this.terminalCounter}`
     };
 
     this.terminals.set(terminalId, terminalData);
@@ -108,6 +122,43 @@ class TerminalManager {
       terminalId: terminalId,
       cwd: cwd
     });
+
+    // Render tabs
+    this.renderTabs();
+
+    return terminalId;
+  }
+
+  renderTabs() {
+    if (!this.tabsContainer) return;
+
+    this.tabsContainer.innerHTML = '';
+
+    for (const [id, data] of this.terminals) {
+      const tab = document.createElement('div');
+      tab.className = 'terminal-tab' + (id === this.activeTerminalId ? ' active' : '');
+      tab.dataset.terminalId = id;
+
+      const name = document.createElement('span');
+      name.textContent = data.name;
+      tab.appendChild(name);
+
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'terminal-tab-close';
+      closeBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+      closeBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.destroyTerminal(id);
+      };
+      tab.appendChild(closeBtn);
+
+      tab.onclick = () => this.switchToTerminal(id);
+      this.tabsContainer.appendChild(tab);
+    }
+
+    if (this.onTabChange) {
+      this.onTabChange();
+    }
   }
 
   switchToTerminal(terminalId) {
@@ -136,6 +187,9 @@ class TerminalManager {
 
     this.activeTerminalId = terminalId;
     terminalData.terminal.focus();
+    
+    // Update tab active state
+    this.renderTabs();
     
     console.log('Switched to terminal:', terminalId);
   }
@@ -171,8 +225,8 @@ class TerminalManager {
     terminalData.isConnected = false;
     console.log('Terminal exited:', { terminalId, exitCode, signal });
     
-    terminalData.terminal.writeln('');
-    terminalData.terminal.writeln(`\x1b[1;31m● Terminal process exited (code: ${exitCode || signal})\x1b[0m`);
+    // Automatically close the terminal tab when process exits
+    this.destroyTerminal(terminalId);
   }
 
   handleClosed(terminalId) {
@@ -241,9 +295,21 @@ class TerminalManager {
 
     if (this.activeTerminalId === terminalId) {
       this.activeTerminalId = null;
+      // Switch to another terminal if available
+      const remainingIds = Array.from(this.terminals.keys());
+      if (remainingIds.length > 0) {
+        this.switchToTerminal(remainingIds[0]);
+      }
     }
 
+    // Update tabs
+    this.renderTabs();
+
     console.log('Terminal destroyed:', terminalId);
+  }
+
+  getTerminalCount() {
+    return this.terminals.size;
   }
 
   destroy() {

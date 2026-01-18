@@ -15,9 +15,12 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
+// Single-user mode: when running inside a per-user container
+const SINGLE_USER_MODE = process.env.SINGLE_USER_MODE === 'true';
+
 // Parse users from environment: "user1:hash1,user2:hash2"
 const USERS = new Map();
-if (process.env.USERS) {
+if (!SINGLE_USER_MODE && process.env.USERS) {
   process.env.USERS.split(',').forEach(entry => {
     const [username, hash] = entry.split(':');
     if (username && hash) USERS.set(username.trim(), hash.trim());
@@ -49,9 +52,9 @@ function verifySessionToken(token) {
 
 // Auth middleware
 function requireAuth(req, res, next) {
-  // If no users configured, skip auth (single-user mode)
-  if (USERS.size === 0) {
-    req.username = 'default';
+  // If single-user mode or no users configured, skip auth
+  if (SINGLE_USER_MODE || USERS.size === 0) {
+    req.username = process.env.USER || 'default';
     return next();
   }
 
@@ -66,6 +69,7 @@ function requireAuth(req, res, next) {
 // Export for websocket module
 module.exports.verifySessionToken = verifySessionToken;
 module.exports.USERS = USERS;
+module.exports.SINGLE_USER_MODE = SINGLE_USER_MODE;
 
 // Middleware
 app.use(express.json());
@@ -81,8 +85,8 @@ app.use('/js', express.static(path.join(__dirname, 'public', 'js')));
 
 // Login page (public)
 app.get('/login', (req, res) => {
-  // If no users configured, redirect to main page
-  if (USERS.size === 0) {
+  // If single-user mode or no users configured, redirect to main page
+  if (SINGLE_USER_MODE || USERS.size === 0) {
     return res.redirect('/');
   }
   // If already authenticated, redirect to main page
@@ -126,8 +130,8 @@ app.post('/api/logout', (req, res) => {
 
 // Main chat interface - requires auth
 app.get('/', (req, res, next) => {
-  // If users are configured, check auth
-  if (USERS.size > 0) {
+  // If users are configured (not single-user mode), check auth
+  if (!SINGLE_USER_MODE && USERS.size > 0) {
     const username = verifySessionToken(req.cookies.session);
     if (!username) {
       return res.redirect('/login');
@@ -160,8 +164,11 @@ app.delete('/api/sessions/:id', requireAuth, (req, res) => {
 
 // Home directory endpoint - returns user's home directory
 app.get('/api/home', requireAuth, (req, res) => {
-  // If users are configured, use /home/{username}
-  if (USERS.size > 0 && req.username !== 'default') {
+  // In single-user mode, use HOME env or os.homedir()
+  if (SINGLE_USER_MODE) {
+    res.json({ home: process.env.HOME || os.homedir() });
+  } else if (USERS.size > 0 && req.username !== 'default') {
+    // If users are configured, use /home/{username}
     res.json({ home: path.join('/home', req.username) });
   } else {
     res.json({ home: os.homedir() });
@@ -173,7 +180,9 @@ const fs = require('fs');
 app.get('/api/directories', requireAuth, (req, res) => {
   // Determine user's home directory
   let homeDir;
-  if (USERS.size > 0 && req.username !== 'default') {
+  if (SINGLE_USER_MODE) {
+    homeDir = process.env.HOME || os.homedir();
+  } else if (USERS.size > 0 && req.username !== 'default') {
     homeDir = path.join('/home', req.username);
   } else {
     homeDir = os.homedir();
@@ -229,9 +238,14 @@ setupWebSocket(server);
 
 // Start server
 server.listen(PORT, HOST, () => {
-  const authMode = USERS.size > 0
-    ? `Multi-user (${USERS.size} user${USERS.size > 1 ? 's' : ''})`
-    : 'Single-user (no auth)';
+  let authMode;
+  if (SINGLE_USER_MODE) {
+    authMode = `Single-user (${process.env.USER || 'container'})`;
+  } else if (USERS.size > 0) {
+    authMode = `Multi-user (${USERS.size} user${USERS.size > 1 ? 's' : ''})`;
+  } else {
+    authMode = 'Single-user (no auth)';
+  }
 
   console.log('');
   console.log('\x1b[36m╔══════════════════════════════════════════════════════╗\x1b[0m');
