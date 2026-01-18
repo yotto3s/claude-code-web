@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Stop Hybrid Mode Services
+# Stop Claude Code Web Services
 
 set -e
 
-echo "Stopping Claude Code Web Hybrid Mode..."
+echo "Stopping Claude Code Web..."
 
-GATEWAY_CONTAINER="claude-code-gateway-hybrid"
+GATEWAY_CONTAINER="claude-code-gateway"
 
 # Stop gateway container
 echo "Stopping gateway container..."
@@ -40,4 +40,4 @@ else
 fi
 
 echo ""
-echo "Hybrid mode services stopped"
+echo "Claude Code Web services stopped"

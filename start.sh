@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Claude Code Web - Hybrid Mode Startup Script
+# Claude Code Web - Startup Script
 # Gateway runs in Docker, sessions run on host
 
 set -e
 
-echo "Starting Claude Code Web in Hybrid Mode..."
+echo "Starting Claude Code Web..."
 echo ""
 echo "  Gateway: Docker container (port 3000)"
 echo "  Server: Host machine (port 3001)"
@@ -14,8 +14,8 @@ echo ""
 # Configuration
 GATEWAY_PORT=${GATEWAY_PORT:-3000}
 HOST_PORT=${HOST_PORT:-3001}
-GATEWAY_IMAGE="claude-code-gateway-hybrid"
-GATEWAY_CONTAINER="claude-code-gateway-hybrid"
+GATEWAY_IMAGE="claude-code-gateway"
+GATEWAY_CONTAINER="claude-code-gateway"
 
 # Check if Docker is available
 if ! command -v docker &> /dev/null; then
@@ -73,8 +73,8 @@ fi
 echo ""
 echo "Step 2: Building gateway Docker image..."
 
-# Create a custom Dockerfile for hybrid gateway
-cat > Dockerfile.gateway-hybrid << 'EOF'
+# Create a custom Dockerfile for gateway
+cat > Dockerfile.gateway << 'EOF'
 FROM node:20-bookworm-slim
 
 # Install Docker CLI and other tools
@@ -96,7 +96,7 @@ RUN node -e "const p=require('./package.json'); delete p.dependencies['node-pty'
 RUN npm install --production
 
 # Copy application files
-COPY gateway-hybrid.js ./
+COPY gateway.js ./
 COPY src/ ./src/
 COPY public/ ./public/
 
@@ -107,10 +107,10 @@ RUN mkdir -p /app/data && chmod 777 /app/data
 EXPOSE 3000
 
 # Start gateway
-CMD ["node", "gateway-hybrid.js"]
+CMD ["node", "gateway.js"]
 EOF
 
-docker build -t ${GATEWAY_IMAGE} -f Dockerfile.gateway-hybrid . 2>&1 | tail -20
+docker build -t ${GATEWAY_IMAGE} -f Dockerfile.gateway . 2>&1 | tail -20
 
 echo "  Gateway image built successfully"
 
@@ -162,7 +162,7 @@ fi
 echo ""
 cat << EOF
 ╔══════════════════════════════════════════════════════╗
-║  Claude Code Web - Hybrid Mode                      ║
+║  Claude Code Web                                    ║
 ║                                                      ║
 ║  Gateway:     http://0.0.0.0:${GATEWAY_PORT}                        ║
 ║  Host Server: http://localhost:${HOST_PORT}                        ║
@@ -179,7 +179,6 @@ Logs:
   Host Server: tail -f ./data/server.log
 
 To stop:
-  Gateway:     docker stop ${GATEWAY_CONTAINER}
-  Host Server: kill \$(cat ./data/server.pid)
+  ./stop.sh
 
 EOF

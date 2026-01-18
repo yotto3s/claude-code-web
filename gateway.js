@@ -1,10 +1,10 @@
 /**
- * Gateway Server
+ * Hybrid Gateway Server
  * 
- * This is the main entry point that:
- * 1. Handles user authentication against the host system (PAM)
- * 2. Spawns per-user Docker containers
- * 3. Proxies requests to the user's container
+ * This gateway:
+ * 1. Runs in a Docker container
+ * 2. Handles user authentication against the host system (PAM)
+ * 3. Proxies requests to a single server running on the host
  */
 
 const express = require('express');
@@ -16,7 +16,7 @@ const cookieParser = require('cookie-parser');
 const WebSocket = require('ws');
 
 const { authenticate, getUserInfo } = require('./src/pam-auth');
-const { containerManager } = require('./src/container-manager');
+const { hostServerManager } = require('./src/host-server-manager');
 
 const app = express();
 const server = http.createServer(app);
@@ -34,7 +34,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 // Session secret for signing cookies
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
-// Active user sessions: username -> { token, userInfo, containerPort }
+// Active user sessions: username -> { token, userInfo }
 const userSessions = new Map();
 
 // Sign/verify session tokens
@@ -84,7 +84,7 @@ app.use('/js', express.static(path.join(__dirname, 'public', 'js')));
 
 // Login page
 app.get('/login', (req, res) => {
-  // If already authenticated with valid container, redirect to main page
+  // If already authenticated, redirect to main page
   const sessionData = verifySessionToken(req.cookies.session);
   if (sessionData) {
     return res.redirect('/');
@@ -112,23 +112,18 @@ app.post('/api/login', async (req, res) => {
 
   console.log(`Authentication successful for ${username} (UID: ${authResult.uid}, GID: ${authResult.gid})`);
 
-  // Start or connect to user's container
-  console.log(`Starting container for ${username}...`);
-  const containerResult = await containerManager.startContainer({
+  // Check if host server is accessible
+  console.log(`Checking host server accessibility...`);
+  const sessionResult = await hostServerManager.startSession({
     username: authResult.username,
     uid: authResult.uid,
     gid: authResult.gid,
     home: authResult.home
   });
 
-  if (!containerResult.success) {
-    console.error(`Failed to start container for ${username}: ${containerResult.error}`);
-    return res.status(500).json({ error: 'Failed to start user environment' });
-  }
-
-  // Wait a moment for the container to be ready
-  if (!containerResult.existing) {
-    await new Promise(resolve => setTimeout(resolve, 2000));
+  if (!sessionResult.success) {
+    console.error(`Host server not accessible: ${sessionResult.error}`);
+    return res.status(500).json({ error: sessionResult.error || 'Host server not accessible' });
   }
 
   // Create session
@@ -142,9 +137,7 @@ app.post('/api/login', async (req, res) => {
   
   userSessions.set(username, {
     token,
-    userInfo,
-    containerIP: containerResult.ip,
-    containerPort: containerResult.port
+    userInfo
   });
 
   res.cookie('session', token, {
@@ -154,7 +147,7 @@ app.post('/api/login', async (req, res) => {
     maxAge: 24 * 60 * 60 * 1000
   });
 
-  console.log(`User ${username} logged in, container: ${containerResult.ip}:${containerResult.port}`);
+  console.log(`User ${username} logged in, proxying to host server at ${sessionResult.ip}:${sessionResult.port}`);
   res.json({ success: true, username });
 });
 
@@ -164,8 +157,6 @@ app.post('/api/logout', async (req, res) => {
   
   if (sessionData) {
     console.log(`User ${sessionData.username} logging out`);
-    // Optionally stop the container
-    // await containerManager.stopContainer(sessionData.username);
     userSessions.delete(sessionData.username);
   }
 
@@ -173,180 +164,154 @@ app.post('/api/logout', async (req, res) => {
   res.json({ success: true });
 });
 
-// Container status endpoint
-app.get('/api/container/status', async (req, res) => {
+// Server status endpoint
+app.get('/api/server/status', async (req, res) => {
   const sessionData = verifySessionToken(req.cookies.session);
   
   if (!sessionData) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
-  const running = await containerManager.isContainerRunning(sessionData.username);
-  const target = await containerManager.getTarget(sessionData.username);
+  const target = await hostServerManager.getTarget(sessionData.username);
+  const isRunning = await hostServerManager.isServerRunning();
 
   res.json({
     username: sessionData.username,
-    running,
-    ip: target?.ip,
-    port: target?.port
+    running: isRunning,
+    ip: target.ip,
+    port: target.port,
+    mode: 'host'
   });
 });
 
-// Ensure container is running and get target (IP and port)
-async function ensureContainer(sessionData) {
-  const { username, uid, gid, home } = sessionData;
-  
-  console.log(`ensureContainer for ${username}: uid=${uid}, gid=${gid}, home=${home}`);
-  
-  // Check if container is running and get its IP
-  if (await containerManager.isContainerRunning(username)) {
-    return await containerManager.getTarget(username);
-  }
-
-  // Start container
-  const result = await containerManager.startContainer({ username, uid, gid, home });
-  if (result.success) {
-    // Wait for container to be ready
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    return { ip: result.ip, port: result.port };
-  }
-
-  return null;
+// Get target for proxying
+async function getProxyTarget(sessionData) {
+  return await hostServerManager.getTarget(sessionData.username);
 }
 
 // Auth middleware for proxied routes
-async function authMiddleware(req, res, next) {
+async function proxyAuth(req, res, next) {
   const sessionData = verifySessionToken(req.cookies.session);
   
   if (!sessionData) {
-    // For API calls, return JSON error
-    if (req.path.startsWith('/api/') || req.path.startsWith('/ws')) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-    // For page requests, redirect to login
-    return res.redirect('/login');
+    return res.status(401).json({ error: 'Not authenticated' });
   }
 
+  // Attach session data for logging
   req.sessionData = sessionData;
   
-  // Ensure container is running
-  const target = await ensureContainer(sessionData);
-  if (!target || !target.ip) {
-    return res.status(503).json({ error: 'User environment not available' });
-  }
+  // Get proxy target
+  const target = await getProxyTarget(sessionData);
   
-  req.containerTarget = target;
+  if (!target) {
+    return res.status(500).json({ error: 'Unable to connect to host server' });
+  }
+
+  req.proxyTarget = target;
   next();
 }
 
-// Proxy all authenticated requests to user's container
-app.use('/', authMiddleware, (req, res) => {
-  const target = `http://${req.containerTarget.ip}:${req.containerTarget.port}`;
+// Proxy all other API requests to host server
+app.all('/api/*', proxyAuth, (req, res) => {
+  const target = req.proxyTarget;
+  const targetUrl = `http://${target.ip}:${target.port}`;
   
-  proxy.web(req, res, { target }, (err) => {
-    console.error(`Proxy error for ${req.sessionData.username}:`, err.message);
-    
+  console.log(`Proxying ${req.method} ${req.path} -> ${targetUrl}`);
+  
+  proxy.web(req, res, {
+    target: targetUrl
+  }, (err) => {
+    console.error(`Proxy error for ${req.path}:`, err.message);
     if (!res.headersSent) {
-      res.status(502).json({ error: 'User environment temporarily unavailable' });
+      res.status(502).json({ error: 'Bad Gateway - Host server not responding' });
     }
   });
 });
 
-// Handle proxy errors
-proxy.on('error', (err, req, res) => {
-  console.error('Proxy error:', err.message);
-  if (res.writeHead && !res.headersSent) {
-    res.writeHead(502, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Proxy error' }));
-  }
+// Proxy main page and other routes
+app.get('/', proxyAuth, (req, res) => {
+  const target = req.proxyTarget;
+  const targetUrl = `http://${target.ip}:${target.port}`;
+  
+  proxy.web(req, res, {
+    target: targetUrl
+  }, (err) => {
+    console.error(`Proxy error for /:`, err.message);
+    if (!res.headersSent) {
+      res.status(502).send('Host server not responding');
+    }
+  });
 });
 
-// WebSocket upgrade handling
+// WebSocket proxy with auth
 server.on('upgrade', async (req, socket, head) => {
-  // Parse cookies manually
+  // Extract cookie from request
   const cookies = {};
-  if (req.headers.cookie) {
-    req.headers.cookie.split(';').forEach(cookie => {
-      const [name, ...rest] = cookie.trim().split('=');
-      if (name) cookies[name] = decodeURIComponent(rest.join('='));
+  const cookieHeader = req.headers.cookie;
+  if (cookieHeader) {
+    cookieHeader.split(';').forEach(cookie => {
+      const [name, ...rest] = cookie.split('=');
+      cookies[name.trim()] = rest.join('=').trim();
     });
   }
 
   const sessionData = verifySessionToken(cookies.session);
   
   if (!sessionData) {
-    console.log('WebSocket upgrade rejected: no valid session');
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
     socket.destroy();
     return;
   }
 
-  // Ensure container is running
-  const target = await ensureContainer(sessionData);
-  if (!target || !target.ip) {
-    console.log(`WebSocket upgrade rejected: no container for ${sessionData.username}`);
-    socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
+  const target = await getProxyTarget(sessionData);
+  
+  if (!target) {
+    socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
     socket.destroy();
     return;
   }
 
-  const wsTarget = `ws://${target.ip}:${target.port}`;
-  console.log(`Proxying WebSocket for ${sessionData.username} to ${wsTarget}`);
-
-  proxy.ws(req, socket, head, { target: wsTarget }, (err) => {
-    console.error(`WebSocket proxy error for ${sessionData.username}:`, err.message);
+  const targetUrl = `http://${target.ip}:${target.port}`;
+  console.log(`WebSocket upgrade for ${sessionData.username} -> ${targetUrl}`);
+  
+  proxy.ws(req, socket, head, {
+    target: targetUrl
+  }, (err) => {
+    console.error(`WebSocket proxy error:`, err.message);
     socket.destroy();
   });
 });
 
-// Start server
-server.listen(PORT, HOST, async () => {
-  // Ensure container image exists
-  const hasImage = await containerManager.ensureImage();
-  if (!hasImage) {
-    console.log('\x1b[33mWarning: User container image not built. Run: docker build -t claude-code-user -f Dockerfile.user .\x1b[0m');
-  }
+// Health check endpoint (no auth required)
+app.get('/health', async (req, res) => {
+  const serverRunning = await hostServerManager.healthCheck();
+  res.json({
+    status: 'ok',
+    gateway: 'running',
+    hostServer: serverRunning ? 'accessible' : 'not accessible'
+  });
+});
 
+// Start server
+server.listen(PORT, HOST, () => {
   console.log('');
-  console.log('\x1b[36m╔══════════════════════════════════════════════════════╗\x1b[0m');
-  console.log('\x1b[36m║\x1b[0m  \x1b[1mClaude Code Web Gateway\x1b[0m                             \x1b[36m║\x1b[0m');
-  console.log('\x1b[36m║\x1b[0m                                                      \x1b[36m║\x1b[0m');
-  console.log(`\x1b[36m║\x1b[0m  Listening: \x1b[32mhttp://${HOST}:${PORT}\x1b[0m`.padEnd(63) + '\x1b[36m║\x1b[0m');
-  console.log('\x1b[36m║\x1b[0m                                                      \x1b[36m║\x1b[0m');
-  console.log('\x1b[36m║\x1b[0m  Auth: \x1b[32mPAM (System Users)\x1b[0m                           \x1b[36m║\x1b[0m');
-  console.log('\x1b[36m║\x1b[0m  Mode: \x1b[32mPer-user containers\x1b[0m                          \x1b[36m║\x1b[0m');
-  console.log('\x1b[36m╚══════════════════════════════════════════════════════╝\x1b[0m');
+  console.log('╔══════════════════════════════════════════════════════╗');
+  console.log('║  Claude Code Web - Hybrid Gateway                   ║');
+  console.log('║                                                      ║');
+  console.log(`║  Gateway:     http://${HOST}:${PORT.toString().padEnd(24)} ║`);
+  console.log(`║  Host Server: ${hostServerManager.hostIP}:${hostServerManager.hostPort.toString().padEnd(21)} ║`);
+  console.log('║                                                      ║');
+  console.log('║  Auth: PAM (System Users)                           ║');
+  console.log('║  Mode: Gateway in Docker, Sessions on Host          ║');
+  console.log('╚══════════════════════════════════════════════════════╝');
   console.log('');
 });
 
-// Graceful shutdown with force timeout
-let shuttingDown = false;
-async function shutdown() {
-  if (shuttingDown) {
-    console.log('Force shutdown!');
-    process.exit(1);
-  }
-  shuttingDown = true;
-  console.log('Shutting down... (press Ctrl+C again to force)');
-  
-  // Force exit after 3 seconds
-  const forceTimeout = setTimeout(() => {
-    console.log('Force shutdown after timeout');
-    process.exit(1);
-  }, 3000);
-  forceTimeout.unref();
-  
-  try {
-    await containerManager.stopAll();
-  } catch (e) {
-    console.error('Error stopping containers:', e.message);
-  }
-  
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('Shutting down gracefully...');
   server.close(() => {
-    clearTimeout(forceTimeout);
+    console.log('Server closed');
     process.exit(0);
   });
-}
-
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+});
