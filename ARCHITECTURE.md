@@ -2,140 +2,111 @@
 
 This document describes the technical architecture of Claude Code Web.
 
-## Deployment Modes
+## Overview
 
-Claude Code Web supports two deployment modes:
+Claude Code Web uses a hybrid architecture with two main components:
 
-### 1. Gateway Mode (Multi-user)
+1. **Gateway Container** - Handles authentication and proxies requests
+2. **Host Server** - Manages Claude sessions and terminals
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              Host System                                     │
 │                                                                             │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                 Gateway Container (claude-code-gateway)                 │ │
+│  │              Gateway Container (claude-code-gateway)                    │ │
+│  │                        Ubuntu 24.04 / Port 3000                         │ │
 │  │  ┌──────────────┐   ┌──────────────┐   ┌───────────────────────────┐  │ │
-│  │  │   Browser    │──▶│  PAM Auth    │──▶│   Container Manager       │  │ │
-│  │  │   Client     │   │  (system)    │   │   (per-user containers)   │  │ │
-│  │  │              │   │              │   │                           │  │ │
-│  │  │   HTTP/WS    │   │  /etc/passwd │   │   docker run              │  │ │
-│  │  │   Proxy      │◀──│  /etc/shadow │◀──│   claude-user-<username>  │  │ │
-│  │  └──────────────┘   └──────────────┘   └───────────────────────────┘  │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                    │                                         │
-│         ┌──────────────────────────┼───────────────────────────┐            │
-│         ▼                          ▼                           ▼            │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐         │
-│  │  User Container │    │  User Container │    │  User Container │         │
-│  │  claude-user-   │    │  claude-user-   │    │  claude-user-   │         │
-│  │  alice          │    │  bob            │    │  carol          │         │
-│  │  (uid: 1000)    │    │  (uid: 1001)    │    │  (uid: 1002)    │         │
-│  │  /home/alice    │    │  /home/bob      │    │  /home/carol    │         │
-│  │  ┌───────────┐  │    │  ┌───────────┐  │    │  ┌───────────┐  │         │
-│  │  │Claude CLI │  │    │  │Claude CLI │  │    │  │Claude CLI │  │         │
-│  │  │node-pty   │  │    │  │node-pty   │  │    │  │node-pty   │  │         │
-│  │  │Starship   │  │    │  │Starship   │  │    │  │Starship   │  │         │
-│  │  └───────────┘  │    │  └───────────┘  │    │  └───────────┘  │         │
-│  └─────────────────┘    └─────────────────┘    └─────────────────┘         │
-└─────────────────────────────────────────────────────────────────────────────┘
+│  │  │   Browser    │──▶│  PAM Auth    │──▶│   HTTP/WebSocket          │  │ │
+│  │  │   Client     │   │  (Python)    │   │   Proxy                   │──┼─┼─┐
+│  │  │              │   │              │   │                           │  │ │ │
+│  │  │   HTTP/WS    │   │  /etc/passwd │   │   http-proxy              │  │ │ │
+│  │  │   :3000      │◀──│  /etc/shadow │◀──│   -> 172.17.0.1:3001      │  │ │ │
+│  │  └──────────────┘   └──────────────┘   └───────────────────────────┘  │ │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │ │
+│                                                                             │ │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │ │
+│  │                    Host Server (Node.js)                                │◀┘ │
+│  │                          Port 3001                                      │   │
+│  │  ┌──────────────┐   ┌──────────────┐   ┌───────────────────────────┐  │   │
+│  │  │   Session    │   │   Claude     │   │   Terminal Manager        │  │   │
+│  │  │   Manager    │   │   Process    │   │   (node-pty)              │  │   │
+│  │  │              │   │              │   │                           │  │   │
+│  │  │   Sessions   │   │   CLI spawn  │   │   PTY terminals           │  │   │
+│  │  │   History    │   │   stream-json│   │   Starship prompt         │  │   │
+│  │  └──────────────┘   └──────────────┘   └───────────────────────────┘  │   │
+│  └────────────────────────────────────────────────────────────────────────┘   │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
-
-**Key Features:**
-- Gateway runs in Docker container (accesses Docker socket to spawn user containers)
-- Authenticates against system PAM (/etc/passwd, /etc/shadow)
-- Supports yescrypt ($y$), SHA-512 ($6$), SHA-256 ($5$), MD5 ($1$) password hashes
-- Spawns isolated Docker containers per user on `claude-code-network`
-- Each container runs with user's UID/GID via docker-entrypoint.sh
-- User's home directory mounted read-write
-- HTTP and WebSocket connections proxied via http-proxy
-- Complete isolation between users
 
 ## Components
 
-### Gateway Mode Components
+### 1. Gateway Server (`gateway.js`)
 
-#### 1. Gateway Server (`gateway.js`)
+The gateway runs in a Docker container (Ubuntu 24.04) and handles:
 
-The main entry point for multi-user deployment, running in the `claude-code-gateway` container:
-- Handles PAM authentication against host system via mounted `/etc/passwd` and `/etc/shadow`
-- Manages user sessions with signed cookies (24-hour expiry)
-- Spawns per-user Docker containers via Docker socket
-- Proxies HTTP and WebSocket connections to user containers using `http-proxy`
-- Connects all containers via `claude-code-network` Docker network
+- **PAM Authentication**: Verifies credentials against `/etc/passwd` and `/etc/shadow`
+- **Session Management**: Issues signed JWT-like session cookies (24-hour expiry)
+- **HTTP Proxy**: Forwards API requests to host server
+- **WebSocket Proxy**: Forwards WebSocket connections to host server
 
-**Key Routes:**
-- `GET /login` - Login page
-- `POST /api/login` - Authenticate, start container, set session cookie
-- `POST /api/logout` - End session (optionally stop container)
-- `GET /api/container/status` - Check if user's container is running
-- All other routes proxied to user's container by IP address
+**Key Features:**
+- Ubuntu 24.04 base image for yescrypt password hash support
+- Python's crypt module for password verification
+- URL-decoding of session cookies for WebSocket auth
+- Re-attaches request body for POST proxying (after express.json() consumes it)
 
-#### 2. PAM Auth (`src/pam-auth.js`)
+**Environment Variables:**
+- `HOST_SERVER_IP` - Host server IP (default: `host.docker.internal` or `172.17.0.1`)
+- `HOST_SERVER_PORT` - Host server port (default: `3001`)
+- `SESSION_SECRET` - Secret for signing session cookies
 
-System authentication module using host-mounted files:
+### 2. PAM Auth (`src/pam-auth.js`)
+
+System authentication module:
+
 - Reads `/etc/passwd` for user info (UID, GID, home directory)
 - Reads `/etc/shadow` for password hashes
-- Uses `mkpasswd` (from `whois` package) for password verification
+- Uses Python's `crypt` module for password verification
 - Supports multiple hash algorithms:
-  - `$y$` - yescrypt (modern default on Debian/Ubuntu)
+  - `$y$` - yescrypt (modern default on Arch, Debian, Ubuntu)
   - `$6$` - SHA-512
   - `$5$` - SHA-256
   - `$1$` - MD5 (legacy)
 
-#### 3. Container Manager (`src/container-manager.js`)
-
-Manages per-user Docker containers:
-- Creates containers named `claude-user-<username>`
-- Runs containers with correct UID/GID: `--user <uid>:<gid>`
-- Mounts user's home directory: `-v <home>:<home>`
-- Connects to `claude-code-network` for gateway communication
-- Tracks running containers by IP address
-- Handles container lifecycle (start, stop, status)
-
-**Container startup command:**
-```bash
-docker run -d --init \
-    --name claude-user-<username> \
-    --network claude-code-network \
-    --user <uid>:<gid> \
-    -e USER=<username> \
-    -e HOME=<home> \
-    -v <home>:<home> \
-    claude-code-user
+**Password Verification:**
+```python
+import crypt
+generated = crypt.crypt(password, stored_hash)
+if generated == stored_hash:
+    # Password matches
 ```
 
-### User Container Components (Dockerfile.user)
+### 3. Host Server Manager (`src/host-server-manager.js`)
 
-The per-user container includes:
-- **Node.js 20** - Runtime environment
-- **Claude Code CLI** - Installed globally via npm
-- **node-pty** - Terminal emulation for integrated shell
-- **Starship** - Beautiful shell prompt
-- **docker-entrypoint.sh** - Maps UID/GID to proper username in `/etc/passwd`
+Manages connection to the host server:
 
-### User Container Server (`server.js`)
+- Configures host server IP and port
+- Health check endpoint verification
+- Provides proxy target for gateway
 
-The Express.js application running inside each user container:
+### 4. Host Server (`server.js`)
+
+Express.js application running on the host machine:
+
 - Serves static files (HTML, CSS, JS)
 - Handles HTTP API endpoints
-- Initializes WebSocket server
-- Runs in `SINGLE_USER_MODE=true` (authentication handled by gateway)
+- Manages WebSocket connections
+- Runs in single-user mode (authentication handled by gateway)
 
 **Key Routes:**
 - `GET /` - Main chat interface
 - `GET /api/sessions` - List sessions
 - `POST /api/sessions` - Create session
 - `DELETE /api/sessions/:id` - Terminate session
+- `GET /api/health` - Health check
 
-### Environment Manager (`src/environment-manager.js`)
-
-Manages the working environment for Claude sessions:
-
-**Responsibilities:**
-- Ensures data directories exist
-- Provides environment path for sessions (user's home directory)
-
-### Session Manager (`src/session-manager.js`)
+### 5. Session Manager (`src/session-manager.js`)
 
 Manages Claude CLI sessions:
 
@@ -156,10 +127,10 @@ Manages Claude CLI sessions:
 1. Create session with working directory
 2. Spawn Claude process
 3. Track message history
-4. Clean up expired sessions (configurable timeout)
+4. Clean up expired sessions
 5. Terminate on disconnect or manual close
 
-### Claude Process (`src/claude-process.js`)
+### 6. Claude Process (`src/claude-process.js`)
 
 Wraps the Claude CLI as a child process:
 
@@ -182,29 +153,32 @@ spawn('claude', ['--output-format', 'stream-json', '--verbose'], {
 - `error` - Error occurred
 - `cancelled` - Operation cancelled
 
-### WebSocket Handler (`src/websocket.js`)
+### 7. Terminal Manager (`src/terminal-manager.js`)
+
+PTY terminal management using node-pty:
+
+- Creates pseudo-terminals with bash shell
+- Handles terminal input/output streaming
+- Supports terminal resize operations
+- Starship prompt integration
+- Cleans up terminals on disconnect
+
+### 8. WebSocket Handler (`src/websocket.js`)
 
 Real-time communication layer:
 
 ```
-Browser Client            Server
-      │                      │
-      │──── connect ────────▶│
-      │◀─── connected ───────│
-      │                      │
-      │──── create_session ─▶│
-      │◀─── session_created ─│
-      │                      │
-      │──── message ────────▶│
-      │◀─── chunk ───────────│
-      │◀─── chunk ───────────│
-      │◀─── complete ────────│
-      │                      │
-      │──── terminal_create ▶│
-      │◀─── terminal_created │
-      │                      │
-      │──── terminal_input ─▶│
-      │◀─── terminal_output ─│
+Browser Client            Gateway              Host Server
+      │                      │                      │
+      │──── WS connect ─────▶│──── WS proxy ───────▶│
+      │◀─── connected ───────│◀────────────────────│
+      │                      │                      │
+      │──── create_session ─▶│─────────────────────▶│
+      │◀─── session_created ─│◀────────────────────│
+      │                      │                      │
+      │──── message ────────▶│─────────────────────▶│
+      │◀─── chunk ───────────│◀────────────────────│
+      │◀─── complete ────────│◀────────────────────│
 ```
 
 **Message Types:**
@@ -234,52 +208,45 @@ Browser Client            Server
 | `terminal_output` | Terminal output data |
 | `terminal_closed` | Terminal closed |
 
-### 6. Terminal Manager (`src/terminal-manager.js`)
-
-PTY terminal management using node-pty:
-- Creates pseudo-terminals with bash shell
-- Handles terminal input/output streaming
-- Supports terminal resize operations
-- Cleans up terminals on disconnect
-
 ## Data Flow
 
-### Session Creation
+### Authentication Flow
 
 ```
-WebSocket Connect
-         │
-         ▼
-┌─────────────────────┐
-│  Send 'connected'   │
-└──────────┬──────────┘
-           │
-           ▼
-   Client sends 'create_session'
-           │
-           ▼
-┌─────────────────────┐
-│  environmentManager │
-│  .ensureEnvironment │
-│                     │
-│  Returns shared     │
-│  environment path   │
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│  sessionManager     │
-│  .createSession     │
-│                     │
-│  1. Spawn Claude    │
-│  2. Track session   │
-└──────────┬──────────┘
-           │
-           ▼
-   Send 'session_created'
+Browser                  Gateway                   Host
+   │                        │                        │
+   │── GET /login ─────────▶│                        │
+   │◀── login.html ─────────│                        │
+   │                        │                        │
+   │── POST /api/login ────▶│                        │
+   │                        │── Read /etc/passwd ───▶│
+   │                        │── Read /etc/shadow ───▶│
+   │                        │── Python crypt ───────▶│
+   │                        │◀── match/nomatch ─────│
+   │                        │                        │
+   │                        │── Check host server ──▶│
+   │                        │◀── health OK ─────────│
+   │                        │                        │
+   │◀── Set session cookie ─│                        │
+   │◀── { success: true } ──│                        │
 ```
 
-### Message Processing
+### Session Creation Flow
+
+```
+Browser                  Gateway                   Host Server
+   │                        │                        │
+   │── WS /ws ─────────────▶│── WS proxy ───────────▶│
+   │   (session cookie)     │   (verify cookie)      │
+   │◀── connected ──────────│◀──────────────────────│
+   │                        │                        │
+   │── create_session ─────▶│─────────────────────▶│
+   │                        │                        │── Spawn Claude CLI
+   │                        │                        │── Track session
+   │◀── session_created ────│◀──────────────────────│
+```
+
+### Message Processing Flow
 
 ```
 User Input
@@ -287,13 +254,13 @@ User Input
     ▼
 ┌──────────────────┐
 │  WebSocket       │
-│  (ws.send)       │
+│  (via Gateway)   │
 └────────┬─────────┘
          │
          ▼
 ┌──────────────────┐
+│  Host Server     │
 │  handleMessage() │
-│  Verify session  │
 └────────┬─────────┘
          │
          ▼
@@ -316,8 +283,8 @@ User Input
          │
          ▼
 ┌──────────────────┐
-│  Event Emitter   │
-│  (chunk, etc)    │
+│  WebSocket       │
+│  (via Gateway)   │
 └────────┬─────────┘
          │
          ▼
@@ -328,14 +295,12 @@ User Input
 
 ```
 claude-code-web/
-├── gateway.js                # Gateway server entry point
-├── server.js                 # User container server entry point
+├── gateway.js                # Gateway server (runs in Docker)
+├── server.js                 # Host server (runs on host)
 ├── package.json
-├── Dockerfile.gateway        # Gateway container image
-├── Dockerfile.user           # Per-user container image
-├── docker-compose.yml        # Docker compose configuration
-├── docker-entrypoint.sh      # User container entrypoint
-├── start-gateway.sh          # Start script (builds and runs)
+├── Dockerfile.gateway        # Gateway container image (Ubuntu 24.04)
+├── start.sh                  # Start script
+├── stop.sh                   # Stop script
 ├── public/
 │   ├── index.html           # Main chat interface
 │   ├── login.html           # Login page
@@ -349,61 +314,78 @@ claude-code-web/
 │       ├── markdown.js      # Markdown rendering
 │       └── login.js         # Login page logic
 ├── src/
-│   ├── auth.js              # Auth middleware
-│   ├── pam-auth.js          # PAM authentication
-│   ├── container-manager.js # User container management
-│   ├── environment-manager.js # Environment management
+│   ├── pam-auth.js          # PAM authentication (Python crypt)
+│   ├── host-server-manager.js # Host server connection
 │   ├── session-manager.js   # Claude session management
 │   ├── terminal-manager.js  # PTY terminal management
 │   ├── claude-process.js    # Claude CLI wrapper
 │   └── websocket.js         # WebSocket handler
-└── data/                    # Persisted data (volume mount)
-    ├── environments/        # Per-user environments
-    └── claude-state/        # Claude CLI state
+└── data/                    # Runtime data
+    ├── server.log           # Host server logs
+    └── server.pid           # Host server PID
 ```
 
 ## Docker Configuration
 
+### Gateway Container
+
 The gateway container needs:
-1. **Docker socket**: To spawn user containers
-2. **Host auth files**: `/etc/passwd`, `/etc/shadow`, `/etc/group`
-3. **Home directories**: `/home` mount for user access
-4. **Session secret**: For cookie signing
+
+1. **Host auth files**: `/etc/passwd`, `/etc/shadow`, `/etc/group` (read-only)
+2. **Session secret**: For cookie signing
+3. **Host server access**: Network connectivity to host
 
 ```bash
-docker run -it --rm --init \
+docker run -d \
     --name claude-code-gateway \
-    --network claude-code-network \
     -p 3000:3000 \
-    -v /var/run/docker.sock:/var/run/docker.sock \
+    -e HOST_SERVER_IP=172.17.0.1 \
+    -e HOST_SERVER_PORT=3001 \
+    -e SESSION_SECRET="..." \
     -v /etc/passwd:/etc/passwd:ro \
     -v /etc/shadow:/etc/shadow:ro \
     -v /etc/group:/etc/group:ro \
-    -v /home:/home \
-    -e SESSION_SECRET="..." \
+    --add-host=host.docker.internal:host-gateway \
     claude-code-gateway
 ```
 
+### Gateway Dockerfile
+
+```dockerfile
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    whois \
+    curl \
+    python3 \
+    nodejs \
+    npm \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# ... install dependencies and copy files
+```
+
+**Why Ubuntu 24.04?**
+- Native yescrypt support in glibc
+- Python's crypt module works with all hash types
+- Modern package versions
+
 ## Dependencies
 
-| Package | Purpose |
-|---------|---------|
-| `express` | HTTP server framework |
-| `ws` | WebSocket server |
-| `cookie-parser` | Session cookie parsing |
-| `uuid` | Generate unique session IDs |
-| `node-pty` | Terminal emulation (user containers) |
-| `http-proxy` | Proxy requests to user containers (gateway) |
+| Package | Purpose | Used In |
+|---------|---------|---------|
+| `express` | HTTP server framework | Gateway, Host |
+| `ws` | WebSocket server | Host |
+| `cookie-parser` | Session cookie parsing | Gateway, Host |
+| `uuid` | Generate unique session IDs | Host |
+| `node-pty` | Terminal emulation | Host |
+| `http-proxy` | Proxy requests/websockets | Gateway |
 
-## Environment Requirements
+## Security Considerations
 
-### Gateway Container
-- Docker with socket access
-- Host system with PAM authentication
-- Users with valid credentials in `/etc/passwd` and `/etc/shadow`
-- User home directories accessible
-
-### User Containers
-- Claude Code CLI (installed in container image)
-- User's Claude credentials in `~/.claude/.credentials.json`
-- node-pty for terminal emulation
+1. **Authentication**: PAM auth via mounted `/etc/shadow` (read-only)
+2. **Session Cookies**: Signed with HMAC-SHA256, 24-hour expiry
+3. **URL Decoding**: Session tokens URL-decoded to handle browser encoding
+4. **Host Isolation**: Gateway runs in container, sessions run on host
+5. **No Docker Socket**: Gateway doesn't need Docker socket access
