@@ -1,0 +1,317 @@
+/**
+ * Hybrid Gateway Server
+ * 
+ * This gateway:
+ * 1. Runs in a Docker container
+ * 2. Handles user authentication against the host system (PAM)
+ * 3. Proxies requests to a single server running on the host
+ */
+
+const express = require('express');
+const http = require('http');
+const httpProxy = require('http-proxy');
+const path = require('path');
+const crypto = require('crypto');
+const cookieParser = require('cookie-parser');
+const WebSocket = require('ws');
+
+const { authenticate, getUserInfo } = require('./src/pam-auth');
+const { hostServerManager } = require('./src/host-server-manager');
+
+const app = express();
+const server = http.createServer(app);
+
+// Create proxy server
+const proxy = httpProxy.createProxyServer({
+  ws: true,
+  changeOrigin: true
+});
+
+// Configuration
+const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
+
+// Session secret for signing cookies
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+
+// Active user sessions: username -> { token, userInfo }
+const userSessions = new Map();
+
+// Sign/verify session tokens
+function createSessionToken(username, userInfo) {
+  const data = JSON.stringify({
+    username,
+    uid: userInfo.uid,
+    gid: userInfo.gid,
+    home: userInfo.home,
+    exp: Date.now() + 24 * 60 * 60 * 1000  // 24 hours
+  });
+  const signature = crypto.createHmac('sha256', SESSION_SECRET).update(data).digest('hex');
+  return Buffer.from(data).toString('base64') + '.' + signature;
+}
+
+function verifySessionToken(token) {
+  if (!token) return null;
+  const [data, signature] = token.split('.');
+  if (!data || !signature) return null;
+  
+  const expected = crypto.createHmac('sha256', SESSION_SECRET)
+    .update(Buffer.from(data, 'base64').toString())
+    .digest('hex');
+  
+  if (signature !== expected) return null;
+  
+  try {
+    const parsed = JSON.parse(Buffer.from(data, 'base64').toString());
+    if (parsed.exp < Date.now()) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+// Trust proxy for correct IP detection
+app.set('trust proxy', true);
+
+// Serve static files for login page
+app.use('/css', express.static(path.join(__dirname, 'public', 'css')));
+app.use('/js', express.static(path.join(__dirname, 'public', 'js')));
+
+// Login page
+app.get('/login', (req, res) => {
+  // If already authenticated, redirect to main page
+  const sessionData = verifySessionToken(req.cookies.session);
+  if (sessionData) {
+    return res.redirect('/');
+  }
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// Login API - authenticate against host system
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required' });
+  }
+
+  console.log(`Login attempt for user: ${username}`);
+
+  // Authenticate against PAM
+  const authResult = await authenticate(username, password);
+
+  if (!authResult.success) {
+    console.log(`Authentication failed for ${username}: ${authResult.error}`);
+    return res.status(401).json({ error: authResult.error || 'Invalid credentials' });
+  }
+
+  console.log(`Authentication successful for ${username} (UID: ${authResult.uid}, GID: ${authResult.gid})`);
+
+  // Check if host server is accessible
+  console.log(`Checking host server accessibility...`);
+  const sessionResult = await hostServerManager.startSession({
+    username: authResult.username,
+    uid: authResult.uid,
+    gid: authResult.gid,
+    home: authResult.home
+  });
+
+  if (!sessionResult.success) {
+    console.error(`Host server not accessible: ${sessionResult.error}`);
+    return res.status(500).json({ error: sessionResult.error || 'Host server not accessible' });
+  }
+
+  // Create session
+  const userInfo = {
+    uid: authResult.uid,
+    gid: authResult.gid,
+    home: authResult.home
+  };
+
+  const token = createSessionToken(username, userInfo);
+  
+  userSessions.set(username, {
+    token,
+    userInfo
+  });
+
+  res.cookie('session', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 24 * 60 * 60 * 1000
+  });
+
+  console.log(`User ${username} logged in, proxying to host server at ${sessionResult.ip}:${sessionResult.port}`);
+  res.json({ success: true, username });
+});
+
+// Logout
+app.post('/api/logout', async (req, res) => {
+  const sessionData = verifySessionToken(req.cookies.session);
+  
+  if (sessionData) {
+    console.log(`User ${sessionData.username} logging out`);
+    userSessions.delete(sessionData.username);
+  }
+
+  res.clearCookie('session', { path: '/' });
+  res.json({ success: true });
+});
+
+// Server status endpoint
+app.get('/api/server/status', async (req, res) => {
+  const sessionData = verifySessionToken(req.cookies.session);
+  
+  if (!sessionData) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const target = await hostServerManager.getTarget(sessionData.username);
+  const isRunning = await hostServerManager.isServerRunning();
+
+  res.json({
+    username: sessionData.username,
+    running: isRunning,
+    ip: target.ip,
+    port: target.port,
+    mode: 'host'
+  });
+});
+
+// Get target for proxying
+async function getProxyTarget(sessionData) {
+  return await hostServerManager.getTarget(sessionData.username);
+}
+
+// Auth middleware for proxied routes
+async function proxyAuth(req, res, next) {
+  const sessionData = verifySessionToken(req.cookies.session);
+  
+  if (!sessionData) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  // Attach session data for logging
+  req.sessionData = sessionData;
+  
+  // Get proxy target
+  const target = await getProxyTarget(sessionData);
+  
+  if (!target) {
+    return res.status(500).json({ error: 'Unable to connect to host server' });
+  }
+
+  req.proxyTarget = target;
+  next();
+}
+
+// Proxy all other API requests to host server
+app.all('/api/*', proxyAuth, (req, res) => {
+  const target = req.proxyTarget;
+  const targetUrl = `http://${target.ip}:${target.port}`;
+  
+  console.log(`Proxying ${req.method} ${req.path} -> ${targetUrl}`);
+  
+  proxy.web(req, res, {
+    target: targetUrl
+  }, (err) => {
+    console.error(`Proxy error for ${req.path}:`, err.message);
+    if (!res.headersSent) {
+      res.status(502).json({ error: 'Bad Gateway - Host server not responding' });
+    }
+  });
+});
+
+// Proxy main page and other routes
+app.get('/', proxyAuth, (req, res) => {
+  const target = req.proxyTarget;
+  const targetUrl = `http://${target.ip}:${target.port}`;
+  
+  proxy.web(req, res, {
+    target: targetUrl
+  }, (err) => {
+    console.error(`Proxy error for /:`, err.message);
+    if (!res.headersSent) {
+      res.status(502).send('Host server not responding');
+    }
+  });
+});
+
+// WebSocket proxy with auth
+server.on('upgrade', async (req, socket, head) => {
+  // Extract cookie from request
+  const cookies = {};
+  const cookieHeader = req.headers.cookie;
+  if (cookieHeader) {
+    cookieHeader.split(';').forEach(cookie => {
+      const [name, ...rest] = cookie.split('=');
+      cookies[name.trim()] = rest.join('=').trim();
+    });
+  }
+
+  const sessionData = verifySessionToken(cookies.session);
+  
+  if (!sessionData) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  const target = await getProxyTarget(sessionData);
+  
+  if (!target) {
+    socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  const targetUrl = `http://${target.ip}:${target.port}`;
+  console.log(`WebSocket upgrade for ${sessionData.username} -> ${targetUrl}`);
+  
+  proxy.ws(req, socket, head, {
+    target: targetUrl
+  }, (err) => {
+    console.error(`WebSocket proxy error:`, err.message);
+    socket.destroy();
+  });
+});
+
+// Health check endpoint (no auth required)
+app.get('/health', async (req, res) => {
+  const serverRunning = await hostServerManager.healthCheck();
+  res.json({
+    status: 'ok',
+    gateway: 'running',
+    hostServer: serverRunning ? 'accessible' : 'not accessible'
+  });
+});
+
+// Start server
+server.listen(PORT, HOST, () => {
+  console.log('');
+  console.log('╔══════════════════════════════════════════════════════╗');
+  console.log('║  Claude Code Web - Hybrid Gateway                   ║');
+  console.log('║                                                      ║');
+  console.log(`║  Gateway:     http://${HOST}:${PORT.toString().padEnd(24)} ║`);
+  console.log(`║  Host Server: ${hostServerManager.hostIP}:${hostServerManager.hostPort.toString().padEnd(21)} ║`);
+  console.log('║                                                      ║');
+  console.log('║  Auth: PAM (System Users)                           ║');
+  console.log('║  Mode: Gateway in Docker, Sessions on Host          ║');
+  console.log('╚══════════════════════════════════════════════════════╝');
+  console.log('');
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('Shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});

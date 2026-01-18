@@ -233,6 +233,11 @@ app.get('/api/directories', requireAuth, (req, res) => {
   }
 });
 
+// Health check endpoint (for gateway to verify server is running)
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: Date.now() });
+});
+
 // Setup WebSocket
 setupWebSocket(server);
 
