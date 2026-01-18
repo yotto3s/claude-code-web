@@ -220,6 +220,11 @@ class App {
     this.currentWorkingDirectory = session.workingDirectory;
     this.chatUI.clearMessages();
     this.ws.listSessions();
+    
+    // If terminal is open, create terminal for new session
+    if (this.elements.terminalPanel.classList.contains('show')) {
+      this.ensureTerminalForCurrentSession();
+    }
   }
 
   onSessionJoined(data) {
@@ -235,6 +240,11 @@ class App {
     }
 
     this.ws.listSessions();
+    
+    // If terminal is open, switch to terminal for this session
+    if (this.elements.terminalPanel.classList.contains('show')) {
+      this.ensureTerminalForCurrentSession();
+    }
   }
 
   onSessionsList(sessions) {
@@ -566,23 +576,34 @@ class App {
     this.elements.terminalToggleBtn.classList.add('active');
     this.elements.appContainer.classList.add('terminal-open');
 
-    // Initialize terminal if not already done
-    if (!this.terminalManager.terminal) {
+    // Initialize terminal manager if not already done
+    if (!this.terminalManager.container) {
       this.terminalManager.initialize(
         this.elements.terminalContainer,
         (msg) => this.ws.send(msg)
       );
     }
 
-    // Create terminal session if not already connected
-    if (!this.terminalManager.isConnected) {
+    // Ensure terminal exists for current session
+    this.ensureTerminalForCurrentSession();
+  }
+
+  ensureTerminalForCurrentSession() {
+    if (!this.currentSessionId) return;
+
+    // Check if terminal exists for this session
+    if (this.terminalManager.hasTerminal(this.currentSessionId)) {
+      // Switch to existing terminal
+      this.terminalManager.switchToTerminal(this.currentSessionId);
+    } else {
+      // Create new terminal for this session
       this.terminalManager.createTerminal(
         this.currentSessionId,
         this.currentWorkingDirectory
       );
     }
 
-    // Fit and focus terminal
+    // Fit and focus terminal after a short delay
     setTimeout(() => {
       this.terminalManager.fit();
       this.terminalManager.focus();
@@ -601,16 +622,16 @@ class App {
   }
 
   onTerminalData(data) {
-    this.terminalManager.handleData(data.data);
+    this.terminalManager.handleData(data);
   }
 
   onTerminalExit(data) {
-    this.terminalManager.handleExit(data.exitCode, data.signal);
+    this.terminalManager.handleExit(data.terminalId, data.exitCode, data.signal);
   }
 
   onTerminalClosed(data) {
     console.log('Terminal closed:', data);
-    this.terminalManager.handleClosed();
+    this.terminalManager.handleClosed(data.terminalId);
   }
 }
 
