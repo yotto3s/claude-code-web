@@ -1071,3 +1071,91 @@ html, body {
   width: 100%;
   margin-top: 0.5rem;
 }
+/* Terminal Panel */
+.terminal-panel {
+  display: none;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  height: 400px;
+  flex-shrink: 0;
+}
+
+.terminal-panel.show {
+  display: flex;
+}
+
+.terminal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.terminal-title {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.terminal-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.terminal-close-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+#terminal-container {
+  flex: 1;
+  padding: 0.5rem;
+  overflow: hidden;
+}
+
+/* Adjust messages container when terminal is shown */
+.app-container.terminal-open .messages-container {
+  height: calc(100vh - 200px - 400px);
+}
+
+/* Terminal Toggle Button in Header */
+#terminal-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+#terminal-toggle-btn:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+#terminal-toggle-btn.active {
+  color: var(--accent-primary);
+  background: var(--bg-primary);
+}
+
+/* Responsive Terminal */
+@media (max-width: 768px) {
+  .terminal-panel {
+    height: 300px;
+  }
+}

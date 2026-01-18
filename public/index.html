@@ -20,6 +20,12 @@
         </div>
       </div>
       <div class="header-right">
+        <button class="icon-btn" id="terminal-toggle-btn" title="Toggle Terminal">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="4 17 10 11 4 5"></polyline>
+            <line x1="12" y1="19" x2="20" y2="19"></line>
+          </svg>
+        </button>
         <div class="session-dropdown">
           <button class="icon-btn" id="sessions-btn" title="Sessions">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -44,6 +50,20 @@
         <p>Start a conversation to begin</p>
       </div>
     </main>
+
+    <!-- Terminal Panel -->
+    <div class="terminal-panel" id="terminal-panel">
+      <div class="terminal-header">
+        <span class="terminal-title">Terminal</span>
+        <button class="icon-btn terminal-close-btn" id="terminal-close-btn" title="Close Terminal">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div id="terminal-container"></div>
+    </div>
 
     <!-- Input Area -->
     <footer class="input-container">
@@ -120,8 +140,12 @@
   <!-- Scripts -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
   <script src="/js/markdown.js"></script>
   <script src="/js/chat.js"></script>
+  <script src="/js/terminal.js"></script>
   <script src="/js/websocket.js"></script>
   <script src="/js/app.js"></script>
 </body>

@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 const { sessionManager } = require('./session-manager');
 const { environmentManager } = require('./environment-manager');
+const { terminalManager } = require('./terminal-manager');
 
 // Parse cookies from header
 function parseCookies(cookieHeader) {
@@ -97,6 +98,22 @@ async function handleMessage(ws, msg, ctx) {
 
     case 'list_sessions':
       handleListSessions(ws);
+      break;
+
+    case 'terminal_create':
+      handleTerminalCreate(ws, msg, getCurrentSession);
+      break;
+
+    case 'terminal_input':
+      handleTerminalInput(ws, msg);
+      break;
+
+    case 'terminal_resize':
+      handleTerminalResize(ws, msg);
+      break;
+
+    case 'terminal_close':
+      handleTerminalClose(ws, msg);
       break;
 
     default:
@@ -345,6 +362,104 @@ function sendError(ws, message) {
   ws.send(JSON.stringify({
     type: 'error',
     message
+  }));
+}
+
+function handleTerminalCreate(ws, msg, getCurrentSession) {
+  const session = getCurrentSession();
+
+  if (!session) {
+    sendError(ws, 'No active session. Create or join a session first.');
+    return;
+  }
+
+  const terminalId = msg.terminalId || session.id;
+  const cwd = msg.cwd || session.workingDirectory;
+  const username = ws.username || 'default';
+
+  // Check if terminal already exists
+  let terminal = terminalManager.getTerminal(terminalId);
+  
+  if (!terminal) {
+    terminal = terminalManager.createTerminal(terminalId, cwd, username);
+
+    terminal.on('data', (data) => {
+      ws.send(JSON.stringify({
+        type: 'terminal_data',
+        terminalId: terminalId,
+        data: data
+      }));
+    });
+
+    terminal.on('exit', ({ exitCode, signal }) => {
+      ws.send(JSON.stringify({
+        type: 'terminal_exit',
+        terminalId: terminalId,
+        exitCode,
+        signal
+      }));
+    });
+
+    terminal.start();
+  }
+
+  ws.send(JSON.stringify({
+    type: 'terminal_created',
+    terminalId: terminalId,
+    cwd: terminal.cwd
+  }));
+}
+
+function handleTerminalInput(ws, msg) {
+  const { terminalId, data } = msg;
+
+  if (!terminalId || !data) {
+    sendError(ws, 'Terminal ID and data are required');
+    return;
+  }
+
+  const terminal = terminalManager.getTerminal(terminalId);
+
+  if (!terminal) {
+    sendError(ws, 'Terminal not found');
+    return;
+  }
+
+  terminal.write(data);
+}
+
+function handleTerminalResize(ws, msg) {
+  const { terminalId, cols, rows } = msg;
+
+  if (!terminalId || !cols || !rows) {
+    sendError(ws, 'Terminal ID, cols, and rows are required');
+    return;
+  }
+
+  const terminal = terminalManager.getTerminal(terminalId);
+
+  if (!terminal) {
+    sendError(ws, 'Terminal not found');
+    return;
+  }
+
+  terminal.resize(cols, rows);
+}
+
+function handleTerminalClose(ws, msg) {
+  const { terminalId } = msg;
+
+  if (!terminalId) {
+    sendError(ws, 'Terminal ID is required');
+    return;
+  }
+
+  const success = terminalManager.terminateSession(terminalId);
+
+  ws.send(JSON.stringify({
+    type: 'terminal_closed',
+    terminalId: terminalId,
+    success
   }));
 }
 

@@ -4,9 +4,12 @@ class App {
   constructor() {
     this.chatUI = null;
     this.ws = null;
+    this.terminalManager = null;
     this.isProcessing = false;
     this.currentTool = null;
     this.currentBrowserPath = null;  // Will be set after fetching home
+    this.currentSessionId = null;
+    this.currentWorkingDirectory = null;
 
     this.init();
   }
@@ -14,6 +17,9 @@ class App {
   async init() {
     // Initialize UI
     this.chatUI = new ChatUI(document.getElementById('messages'));
+
+    // Initialize Terminal Manager
+    this.terminalManager = new TerminalManager();
 
     // Get DOM elements
     this.elements = {
@@ -25,6 +31,11 @@ class App {
       sessionMenu: document.getElementById('session-menu'),
       sessionList: document.getElementById('session-list'),
       newSessionBtn: document.getElementById('new-session-btn'),
+      terminalToggleBtn: document.getElementById('terminal-toggle-btn'),
+      terminalPanel: document.getElementById('terminal-panel'),
+      terminalContainer: document.getElementById('terminal-container'),
+      terminalCloseBtn: document.getElementById('terminal-close-btn'),
+      appContainer: document.querySelector('.app-container'),
       // Modal elements
       modal: document.getElementById('new-session-modal'),
       modalClose: document.getElementById('modal-close'),
@@ -112,6 +123,12 @@ class App {
       this.hideSessionPicker();
       this.openNewSessionModal();
     });
+
+    // Terminal toggle button
+    this.elements.terminalToggleBtn.addEventListener('click', () => this.toggleTerminal());
+
+    // Terminal close button
+    this.elements.terminalCloseBtn.addEventListener('click', () => this.closeTerminal());
   }
 
   autoResizeTextarea() {
@@ -160,6 +177,12 @@ class App {
     this.ws.on('text', (text) => this.onText(text));
     this.ws.on('process_closed', (data) => this.onProcessClosed(data));
 
+    // Terminal event handlers
+    this.ws.on('terminal_created', (data) => this.onTerminalCreated(data));
+    this.ws.on('terminal_data', (data) => this.onTerminalData(data));
+    this.ws.on('terminal_exit', (data) => this.onTerminalExit(data));
+    this.ws.on('terminal_closed', (data) => this.onTerminalClosed(data));
+
     try {
       await this.ws.connect();
     } catch (err) {
@@ -193,6 +216,8 @@ class App {
   onSessionCreated(session) {
     console.log('Session created:', session.id);
     localStorage.setItem('sessionId', session.id);
+    this.currentSessionId = session.id;
+    this.currentWorkingDirectory = session.workingDirectory;
     this.chatUI.clearMessages();
     this.ws.listSessions();
   }
@@ -200,6 +225,8 @@ class App {
   onSessionJoined(data) {
     console.log('Session joined:', data.session.id);
     localStorage.setItem('sessionId', data.session.id);
+    this.currentSessionId = data.session.id;
+    this.currentWorkingDirectory = data.session.workingDirectory;
 
     if (data.history && data.history.length > 0) {
       this.chatUI.loadHistory(data.history);
@@ -516,6 +543,74 @@ class App {
 
       list.appendChild(item);
     }
+  }
+
+  // Terminal methods
+  toggleTerminal() {
+    const isVisible = this.elements.terminalPanel.classList.contains('show');
+
+    if (isVisible) {
+      this.closeTerminal();
+    } else {
+      this.openTerminal();
+    }
+  }
+
+  openTerminal() {
+    if (!this.currentSessionId) {
+      this.chatUI.showError('Please create or join a session first');
+      return;
+    }
+
+    this.elements.terminalPanel.classList.add('show');
+    this.elements.terminalToggleBtn.classList.add('active');
+    this.elements.appContainer.classList.add('terminal-open');
+
+    // Initialize terminal if not already done
+    if (!this.terminalManager.terminal) {
+      this.terminalManager.initialize(
+        this.elements.terminalContainer,
+        (msg) => this.ws.send(msg)
+      );
+    }
+
+    // Create terminal session if not already connected
+    if (!this.terminalManager.isConnected) {
+      this.terminalManager.createTerminal(
+        this.currentSessionId,
+        this.currentWorkingDirectory
+      );
+    }
+
+    // Fit and focus terminal
+    setTimeout(() => {
+      this.terminalManager.fit();
+      this.terminalManager.focus();
+    }, 100);
+  }
+
+  closeTerminal() {
+    this.elements.terminalPanel.classList.remove('show');
+    this.elements.terminalToggleBtn.classList.remove('active');
+    this.elements.appContainer.classList.remove('terminal-open');
+  }
+
+  onTerminalCreated(data) {
+    console.log('Terminal created:', data);
+    this.terminalManager.handleCreated(data.terminalId);
+  }
+
+  onTerminalData(data) {
+    this.terminalManager.handleData(data.data);
+  }
+
+  onTerminalExit(data) {
+    this.terminalManager.handleExit(data.exitCode, data.signal);
+  }
+
+  onTerminalClosed(data) {
+    console.log('Terminal closed:', data);
+    this.terminalManager.handleClosed();
   }
 }
 

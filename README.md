@@ -5,6 +5,7 @@ A web-based interface for Claude Code CLI that enables browser access to Claude'
 ## Features
 
 - **Web Interface**: Access Claude Code through a browser-based chat interface
+- **Integrated Terminal**: Full terminal access alongside Claude conversations
 - **Streaming Responses**: Real-time streaming of Claude's responses
 - **Session Management**: Multiple concurrent sessions with automatic cleanup
 - **Persistent Environment**: Files created by Claude persist across sessions

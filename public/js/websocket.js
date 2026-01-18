@@ -139,18 +139,42 @@ class WebSocketClient {
         this.emit('process_closed', { code: msg.code });
         break;
 
+      case 'terminal_created':
+        this.emit('terminal_created', { terminalId: msg.terminalId, cwd: msg.cwd });
+        break;
+
+      case 'terminal_data':
+        this.emit('terminal_data', { terminalId: msg.terminalId, data: msg.data });
+        break;
+
+      case 'terminal_exit':
+        this.emit('terminal_exit', { terminalId: msg.terminalId, exitCode: msg.exitCode, signal: msg.signal });
+        break;
+
+      case 'terminal_closed':
+        this.emit('terminal_closed', { terminalId: msg.terminalId, success: msg.success });
+        break;
+
       default:
         console.log('Unknown message type:', msg.type, msg);
     }
   }
 
-  send(type, data = {}) {
+  send(typeOrMsg, data = {}) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       console.error('WebSocket not connected');
       return false;
     }
 
-    this.ws.send(JSON.stringify({ type, ...data }));
+    // Support both send(type, data) and send(messageObject)
+    let message;
+    if (typeof typeOrMsg === 'string') {
+      message = { type: typeOrMsg, ...data };
+    } else {
+      message = typeOrMsg;
+    }
+
+    this.ws.send(JSON.stringify(message));
     return true;
   }
 
