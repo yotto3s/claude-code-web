@@ -319,7 +319,15 @@ function setupSessionListeners(ws, session) {
   // Remove any existing listeners to prevent duplicates
   proc.removeAllListeners();
 
+  // Buffer to accumulate assistant message text for history persistence
+  let currentMessageBuffer = '';
+
   proc.on('chunk', (data) => {
+    // Accumulate text for history persistence
+    if (data.text) {
+      currentMessageBuffer += data.text;
+    }
+
     safeSend(ws, {
       type: 'chunk',
       text: data.text,
@@ -373,11 +381,16 @@ function setupSessionListeners(ws, session) {
   });
 
   proc.on('result', (data) => {
-    // Add result to history (store only the text, not full result object)
-    sessionManager.addToHistory(session.id, {
-      role: 'assistant',
-      content: data.result || ''
-    });
+    // Add accumulated message to history
+    if (currentMessageBuffer) {
+      sessionManager.addToHistory(session.id, {
+        role: 'assistant',
+        content: currentMessageBuffer
+      });
+    }
+
+    // Reset buffer for next message
+    currentMessageBuffer = '';
 
     safeSend(ws, {
       type: 'result',
@@ -386,6 +399,9 @@ function setupSessionListeners(ws, session) {
   });
 
   proc.on('error', (data) => {
+    // Reset buffer on error
+    currentMessageBuffer = '';
+
     safeSend(ws, {
       type: 'error',
       message: data.message,
@@ -394,6 +410,9 @@ function setupSessionListeners(ws, session) {
   });
 
   proc.on('cancelled', () => {
+    // Reset buffer on cancellation
+    currentMessageBuffer = '';
+
     safeSend(ws, {
       type: 'cancelled'
     });
@@ -675,19 +694,19 @@ function handleExitPlanModeResponse(ws, msg, getCurrentSession) {
     return;
   }
 
-  // If approved, switch to default mode
+  // If approved, switch to acceptEdits mode
   if (msg.approved) {
-    session.mode = 'default';
-    sessionManager.setSessionMode(session.id, 'default');
+    session.mode = 'acceptEdits';
+    sessionManager.setSessionMode(session.id, 'acceptEdits');
 
     if (session.process && typeof session.process.setMode === 'function') {
-      session.process.setMode('default');
+      session.process.setMode('acceptEdits');
     }
 
     // Send mode changed confirmation
     safeSend(ws, {
       type: 'mode_changed',
-      mode: 'default'
+      mode: 'acceptEdits'
     });
   }
 }

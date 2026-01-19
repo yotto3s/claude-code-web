@@ -181,6 +181,14 @@ class WebSocketClient {
         this.emit('mode_changed', { mode: msg.mode });
         break;
 
+      case 'exit_plan_mode_request':
+        this.emit('exit_plan_mode_request', {
+          requestId: msg.requestId,
+          toolUseId: msg.toolUseId,
+          input: msg.input
+        });
+        break;
+
       case 'agent_start':
         this.emit('agent_start', {
           taskId: msg.taskId,

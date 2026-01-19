@@ -1,206 +1,67 @@
-# Documentation Update Plan
+# Plan: Remove Command-Related Functionality
 
 ## Overview
-This plan outlines updates needed to synchronize documentation with the current codebase. The project has evolved to include new features like persistent sessions (SQLite database), agent tracking, plan mode, and more detailed WebSocket protocol.
+Remove all slash command handling, autocomplete, and related functionality from the Claude Code Web project. This includes client-side command routing, server-side command handling, and the autocomplete UI.
 
----
+## Files to Modify
 
-## 1. README.md Updates
+### 1. Delete Files
+- `public/js/command-handler.js` - Command parsing and routing logic
+- `public/js/slash-commands.js` - Autocomplete UI for slash commands
 
-### 1.1 Architecture Diagram
-**Current Issue:** Diagram shows "Claude Process (CLI spawn)" but code uses Claude Agent SDK
-**Update:** Change "Claude Process" to "Claude Agent SDK" and update description
-
-### 1.2 Dependencies Table
-**Current Issue:** Missing `better-sqlite3` and `zod` dependencies
-**Update:** Add:
-| Package | Purpose |
-|---------|---------|
-| `better-sqlite3` | SQLite database for session persistence |
-| `zod` | Schema validation |
-
-### 1.3 API Endpoints Table
-**Current Issue:** Missing new endpoints
-**Update:** Add:
-- `GET /api/home` - Get user's home directory
-- `GET /api/directories` - Browse directories
-- `GET /api/server/status` - Server status (gateway only)
-
-### 1.4 WebSocket Protocol Section
-**Current Issue:** Missing many message types
-**Update:** Add client→server types:
-- `prompt_response` - Answer to AskUserQuestion
-- `permission_response` - Tool permission decision
-- `rename_session` - Rename a session
-- `list_agents` - List active agents
-- `set_mode` - Change mode (default/acceptEdits/plan)
-- `exit_plan_mode_response` - Approve/deny plan mode exit
-
-Add server→client types:
-- `prompt` - Question from Claude (AskUserQuestion)
-- `permission_request` - Tool needs approval
-- `mode_changed` - Mode was changed
-- `agent_start` - New agent started
-- `task_notification` - Background task completed
-- `session_renamed` - Session name changed
-- `exit_plan_mode_request` - Plan mode exit requested
-
-### 1.5 Session Management
-**Current Issue:** Documentation says "Session state is in-memory only"
-**Update:** Document SQLite persistence:
-- Sessions persist across server restarts
-- Message history is stored in SQLite database
-- Sessions auto-recover when user rejoins
-- Location: `data/sessions.db`
-
-### 1.6 Operating Modes
-**Current Issue:** Not documented
-**Update:** Add new section:
-```markdown
-## Operating Modes
-
-The web interface supports three operating modes:
-
-- **Default Mode**: Normal operation with permission prompts for tools
-- **Accept Edits Mode**: Auto-approves file edit operations (Edit, Write, MultiEdit, NotebookEdit)
-- **Plan Mode**: Read-only mode for exploration and planning - only allows Glob, Grep, Read, WebFetch, WebSearch, Task, TodoWrite
+### 2. Modify `public/index.html`
+Remove script includes for command files:
+```html
+<!-- Remove these lines -->
+<script src="/js/command-handler.js"></script>
+<script src="/js/slash-commands.js"></script>
 ```
 
----
+### 3. Modify `public/js/app.js`
+- Remove `this.commandHandler = new CommandHandler();` (line 16)
+- Remove `initSlashAutocomplete()` method (lines 100-109)
+- Remove `handleSlashCommand()` method (lines 111-116)
+- Remove slash command autocomplete initialization call in `init()` (line 91)
+- Remove autocomplete-related event handling in `setupEventListeners()` (lines 124-132)
+- Simplify `sendMessage()` method to remove command routing logic (lines 530-561)
+- Remove `onServerStatus()` handler (lines 1295-1297)
+- Remove `onCommandResponse()` handler (lines 1299-1307)
+- Remove event listeners for `server_status` and `command_response` (lines 311-312)
 
-## 2. ARCHITECTURE.md Updates
+### 4. Modify `public/js/websocket.js`
+- Remove `sendCommand()` method (lines 304-310)
+- Remove `sendServerCommand()` method (lines 317-322)
+- Remove `server_status` case in `handleMessage()` (lines 224-229)
+- Remove `command_response` case in `handleMessage()` (lines 231-237)
 
-### 2.1 Claude Process Section (Major Update)
-**Current Issue:** Shows CLI spawn with `stream-json`, but code uses SDK
-**Update:** Replace with:
-```javascript
-const { query } = require('@anthropic-ai/claude-agent-sdk');
+### 5. Modify `src/websocket.js` (server-side)
+- Remove `case 'command':` handling (lines 203-205)
+- Remove `case 'server_command':` handling (lines 207-209)
+- Remove `handleClaudeCommand()` function (lines 845-878)
+- Remove `handleServerCommand()` function (lines 883-908)
 
-queryInstance = query({
-  prompt: messageGenerator,  // Async generator for streaming input
-  options: {
-    cwd: workingDirectory,
-    permissionMode: 'default',
-    canUseTool: async (toolName, input, options) => {
-      // Handle permission request - must return { behavior: 'allow' | 'deny' }
-    }
-  }
-});
-```
-
-### 2.2 File Structure
-**Current Issue:** Missing `database.js`, `environment-manager.js`, `auth.js`
-**Update:** Add to src/ listing:
-- `database.js` - SQLite session persistence (better-sqlite3)
-- `environment-manager.js` - User environment management
-- `auth.js` - Authentication utilities
-
-Add to data/ listing:
-- `sessions.db` - SQLite database for session persistence
-
-### 2.3 Session Manager Section
-**Current Issue:** Shows in-memory only structure
-**Update:** Document SQLite persistence and session recovery
-
-### 2.4 WebSocket Handler Section
-**Current Issue:** Missing many message types
-**Update:** Add all new message types listed in README.md section 1.4
-
-### 2.5 Agent System (New Section)
-**Current Issue:** Not documented
-**Update:** Add new section documenting:
-- Agent tracking (`activeAgents` Map)
-- Agent context stack for nested agents
-- `agent_start` and `task_notification` events
-- Agent types: Bash, general-purpose, Explore, Plan, etc.
-
-### 2.6 Permission System (New Section)
-**Current Issue:** Not documented
-**Update:** Add new section documenting:
-- `canUseTool` callback pattern
-- Permission request flow
-- Mode-based auto-approval
-- Plan mode restrictions
-
----
-
-## 3. CLAUDE.md Updates
-
-### 3.1 Architecture Diagram
-**Current Issue:** Shows "Claude Agent SDK" but code pattern differs
-**Update:** Update to show actual SDK usage pattern with `canUseTool`
-
-### 3.2 WebSocket Protocol
-**Current Issue:** Missing new message types
-**Update:** Add:
-- Client→Server: `permission_response`, `set_mode`, `exit_plan_mode_response`, `rename_session`, `list_agents`
-- Server→Client: `permission_request`, `mode_changed`, `agent_start`, `task_notification`, `exit_plan_mode_request`, `session_renamed`
-
-### 3.3 Key Modules
-**Current Issue:** Missing `database.js`
-**Update:** Add:
-- `database.js` - SQLite persistence using better-sqlite3 (WAL mode)
-
-### 3.4 Important Notes
-**Current Issue:** Says "Session state is in-memory only"
-**Update:** Change to: "Session state is persisted to SQLite database (`data/sessions.db`)"
-
----
-
-## 4. Code Comments Updates
-
-### 4.1 server.js
-- Add JSDoc comments for `createSessionToken()` and `verifySessionToken()`
-- Add header comment describing the file's purpose
-
-### 4.2 gateway.js
-- Add JSDoc comments for session management functions
-- Document proxy configuration
-
-### 4.3 src/claude-process.js
-- Add class-level JSDoc describing ClaudeProcess
-- Add method-level JSDoc for all public methods
-- Document event types emitted
-
-### 4.4 src/session-manager.js
-- Add class-level JSDoc describing SessionManager
-- Add JSDoc for configuration constants (MAX_SESSIONS, SESSION_TIMEOUT)
-- Document database integration
-
-### 4.5 src/database.js
-- Add module-level JSDoc describing database schema
-- Document WAL mode usage
-
-### 4.6 src/websocket.js
-- Add function-level JSDoc for message handlers
-- Document message type schemas
-
-### 4.7 src/terminal-manager.js
-- Add class-level JSDoc for TerminalManager and TerminalSession
-- Document cleanup behavior
-
----
+### 6. Modify `public/css/style.css`
+Remove slash autocomplete styles (lines 1808-1907):
+- `.slash-autocomplete` and related styles
+- `.slash-autocomplete-item` styles
+- `.slash-command-name` and `.slash-command-desc` styles
+- Related media queries and scrollbar styles
 
 ## Summary of Changes
 
-| File | Type of Update |
-|------|----------------|
-| README.md | Architecture, API endpoints, WebSocket protocol, persistence docs, modes |
-| ARCHITECTURE.md | SDK integration, file structure, new sections (agents, permissions) |
-| CLAUDE.md | Architecture, WebSocket protocol, modules, persistence |
-| server.js | JSDoc comments |
-| gateway.js | JSDoc comments |
-| src/claude-process.js | JSDoc comments |
-| src/session-manager.js | JSDoc comments |
-| src/database.js | JSDoc comments |
-| src/websocket.js | JSDoc comments |
-| src/terminal-manager.js | JSDoc comments |
+| File | Action |
+|------|--------|
+| `public/js/command-handler.js` | DELETE |
+| `public/js/slash-commands.js` | DELETE |
+| `public/index.html` | Remove 2 script tags |
+| `public/js/app.js` | Remove command handler, autocomplete, and simplify sendMessage |
+| `public/js/websocket.js` | Remove sendCommand, sendServerCommand, and related handlers |
+| `src/websocket.js` | Remove command and server_command handlers |
+| `public/css/style.css` | Remove ~100 lines of slash autocomplete styles |
 
----
-
-## Implementation Order
-
-1. **README.md** - Primary user-facing documentation
-2. **ARCHITECTURE.md** - Technical reference
-3. **CLAUDE.md** - Developer/Claude guidance
-4. **Source code comments** - Code-level documentation (all source files)
+## Behavior After Changes
+- Messages starting with `/` will be sent as regular messages to Claude (no special handling)
+- No autocomplete dropdown when typing `/`
+- No client-side command execution (like `/clear`)
+- No server-side command execution (like `/status`)
+- All input treated uniformly as messages to Claude
