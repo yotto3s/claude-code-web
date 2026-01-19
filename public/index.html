@@ -20,6 +20,12 @@
         </div>
       </div>
       <div class="header-right">
+        <button class="icon-btn" id="agents-toggle-btn" title="Toggle Agent Activity">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"></path>
+          </svg>
+        </button>
         <button class="icon-btn" id="terminal-toggle-btn" title="Toggle Terminal">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="4 17 10 11 4 5"></polyline>
@@ -57,6 +63,22 @@
         <p>Start a conversation to begin</p>
       </div>
     </main>
+
+    <!-- Agent Activity Panel -->
+    <div class="agents-panel" id="agents-panel">
+      <div class="agents-header">
+        <span class="agents-title">Agent Activity</span>
+        <button class="icon-btn agents-close-btn" id="agents-close-btn" title="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="agents-list" id="agents-list">
+        <div class="agents-empty">No active agents</div>
+      </div>
+    </div>
 
     <!-- Terminal Panel -->
     <div class="terminal-panel" id="terminal-panel">

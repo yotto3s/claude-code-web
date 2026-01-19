@@ -64,7 +64,12 @@ class App {
       sessionPickerNew: document.getElementById('session-picker-new'),
       logoutBtn: document.getElementById('logout-btn'),
       // Mode toggle button
-      modeToggleBtn: document.getElementById('mode-toggle-btn')
+      modeToggleBtn: document.getElementById('mode-toggle-btn'),
+      // Agent activity panel elements
+      agentsToggleBtn: document.getElementById('agents-toggle-btn'),
+      agentsPanel: document.getElementById('agents-panel'),
+      agentsList: document.getElementById('agents-list'),
+      agentsCloseBtn: document.getElementById('agents-close-btn')
     };
 
     // Setup event listeners
@@ -189,6 +194,25 @@ class App {
     if (this.elements.modeToggleBtn) {
       this.elements.modeToggleBtn.addEventListener('click', () => this.cycleMode());
     }
+
+    // Agent activity panel toggle
+    if (this.elements.agentsToggleBtn) {
+      this.elements.agentsToggleBtn.addEventListener('click', () => this.toggleAgentsPanel());
+    }
+
+    // Agent activity panel close button
+    if (this.elements.agentsCloseBtn) {
+      this.elements.agentsCloseBtn.addEventListener('click', () => this.closeAgentsPanel());
+    }
+
+    // Close agents panel when clicking outside
+    document.addEventListener('click', (e) => {
+      if (this.elements.agentsPanel.classList.contains('show') &&
+          !this.elements.agentsPanel.contains(e.target) &&
+          !this.elements.agentsToggleBtn.contains(e.target)) {
+        this.closeAgentsPanel();
+      }
+    });
   }
 
   autoResizeTextarea() {
@@ -263,15 +287,9 @@ class App {
   onConnected() {
     this.setStatus('connected', 'Connected');
 
-    // Load saved session or show session picker
-    const savedSessionId = localStorage.getItem('sessionId');
-    if (savedSessionId) {
-      this.ws.joinSession(savedSessionId);
-    } else {
-      // Show session picker instead of auto-creating
-      this.showSessionPicker();
-      this.ws.listSessions();
-    }
+    // Always show session picker on login for user to select a session
+    this.showSessionPicker();
+    this.ws.listSessions();
   }
 
   onDisconnected() {
@@ -337,6 +355,10 @@ class App {
       } else {
         this.renderSessionPicker(sessions);
       }
+    }
+    // Also update agents panel if visible
+    if (this.elements.agentsPanel.classList.contains('show')) {
+      this.renderAgentsList(sessions);
     }
   }
 
@@ -756,6 +778,97 @@ class App {
     this.elements.terminalPanel.classList.remove('show');
     this.elements.terminalToggleBtn.classList.remove('active');
     this.elements.appContainer.classList.remove('terminal-open');
+  }
+
+  // Agent Activity Panel methods
+  toggleAgentsPanel() {
+    if (this.elements.agentsPanel.classList.contains('show')) {
+      this.closeAgentsPanel();
+    } else {
+      this.openAgentsPanel();
+    }
+  }
+
+  openAgentsPanel() {
+    this.elements.agentsPanel.classList.add('show');
+    this.elements.agentsToggleBtn.classList.add('active');
+    // Request fresh session list
+    if (this.ws && this.ws.isConnected()) {
+      this.ws.listSessions();
+    }
+    // Start auto-refresh
+    this.startAgentsRefresh();
+  }
+
+  closeAgentsPanel() {
+    this.elements.agentsPanel.classList.remove('show');
+    this.elements.agentsToggleBtn.classList.remove('active');
+    // Stop auto-refresh
+    this.stopAgentsRefresh();
+  }
+
+  startAgentsRefresh() {
+    // Refresh agent list every 3 seconds while panel is open
+    this.agentsRefreshInterval = setInterval(() => {
+      if (this.ws && this.ws.isConnected() && this.elements.agentsPanel.classList.contains('show')) {
+        this.ws.listSessions();
+      }
+    }, 3000);
+  }
+
+  stopAgentsRefresh() {
+    if (this.agentsRefreshInterval) {
+      clearInterval(this.agentsRefreshInterval);
+      this.agentsRefreshInterval = null;
+    }
+  }
+
+  renderAgentsList(sessions) {
+    const list = this.elements.agentsList;
+
+    if (!sessions || sessions.length === 0) {
+      list.innerHTML = '<div class="agents-empty">No active agents</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+    for (const session of sessions) {
+      const item = document.createElement('div');
+      item.className = 'agent-item' + (session.id === this.currentSessionId ? ' current' : '');
+
+      const statusClass = session.isProcessing ? 'processing' : 'idle';
+      const statusText = session.isProcessing ? 'Processing' : 'Idle';
+
+      const created = new Date(session.createdAt);
+      const timeStr = created.toLocaleTimeString();
+
+      // Get short directory name
+      const dirName = session.workingDirectory ?
+        session.workingDirectory.split('/').pop() || session.workingDirectory :
+        'Unknown';
+
+      item.innerHTML = `
+        <div class="agent-item-header">
+          <span class="agent-item-id">${dirName}</span>
+          <span class="agent-status ${statusClass}">
+            <span class="agent-status-dot"></span>
+            ${statusText}
+          </span>
+        </div>
+        ${session.workingDirectory ? `<div class="agent-item-dir">${session.workingDirectory}</div>` : ''}
+        <div class="agent-item-meta">
+          <span class="agent-item-messages">${session.historyLength} messages</span>
+          <span class="agent-item-time">${timeStr}</span>
+        </div>
+      `;
+
+      item.addEventListener('click', () => {
+        this.switchSession(session.id);
+        this.closeAgentsPanel();
+      });
+
+      list.appendChild(item);
+    }
   }
 
   // Mode management methods
