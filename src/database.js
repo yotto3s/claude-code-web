@@ -9,7 +9,7 @@
  * - Foreign key constraints for data integrity
  *
  * Schema:
- * - sessions: id, name, working_directory, mode, created_at, last_activity, is_active
+ * - sessions: id, name, working_directory, mode, sdk_session_id, created_at, last_activity, is_active
  * - messages: id, session_id, role, content, timestamp
  * - allowed_tools: id, session_id, tool_name, allowed_at (for persisting "Allow All" decisions)
  *
@@ -40,6 +40,7 @@ class SessionDatabase {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.initSchema();
+    this.migrateSchema();
 
     // Checkpoint WAL periodically (every 5 minutes) to ensure data is written to main DB
     this.checkpointInterval = setInterval(() => {
@@ -58,6 +59,7 @@ class SessionDatabase {
         name TEXT NOT NULL,
         working_directory TEXT NOT NULL,
         mode TEXT DEFAULT 'default',
+        sdk_session_id TEXT,
         created_at INTEGER NOT NULL,
         last_activity INTEGER NOT NULL,
         is_active INTEGER DEFAULT 1
@@ -87,6 +89,21 @@ class SessionDatabase {
 
       CREATE INDEX IF NOT EXISTS idx_allowed_tools_session_id ON allowed_tools(session_id);
     `);
+  }
+
+  /**
+   * Migrate schema for existing databases.
+   * Adds new columns if they don't exist.
+   */
+  migrateSchema() {
+    // Check if sdk_session_id column exists
+    const tableInfo = this.db.prepare('PRAGMA table_info(sessions)').all();
+    const hasSdkSessionId = tableInfo.some(col => col.name === 'sdk_session_id');
+
+    if (!hasSdkSessionId) {
+      console.log('[Database] Migrating: adding sdk_session_id column to sessions table');
+      this.db.exec('ALTER TABLE sessions ADD COLUMN sdk_session_id TEXT');
+    }
   }
 
   // Session CRUD operations
@@ -119,6 +136,19 @@ class SessionDatabase {
   updateSessionName(sessionId, name) {
     const stmt = this.db.prepare('UPDATE sessions SET name = ? WHERE id = ?');
     stmt.run(name, sessionId);
+  }
+
+  /**
+   * Update the SDK session ID for a session.
+   * This is the Claude Agent SDK's internal session ID used for resume.
+   *
+   * @param {string} sessionId - Our session ID
+   * @param {string} sdkSessionId - The SDK's session ID
+   */
+  updateSdkSessionId(sessionId, sdkSessionId) {
+    const stmt = this.db.prepare('UPDATE sessions SET sdk_session_id = ? WHERE id = ?');
+    stmt.run(sdkSessionId, sessionId);
+    console.log(`[Database] SDK session ID updated for session ${sessionId}: ${sdkSessionId}`);
   }
 
   deactivateSession(sessionId) {

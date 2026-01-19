@@ -63,6 +63,7 @@ class SessionManager {
           workingDirectory: dbSession.working_directory,
           mode: dbSession.mode || 'default',
           allowedTools, // Tools approved via "Allow All"
+          sdkSessionId: dbSession.sdk_session_id || null, // SDK session ID for resume
           persisted: true // Flag indicating this was loaded from DB
         });
       }
@@ -124,7 +125,6 @@ class SessionManager {
     const now = Date.now();
 
     const process = new ClaudeProcess(workingDirectory);
-    process.start();
 
     const session = {
       id,
@@ -135,8 +135,22 @@ class SessionManager {
       lastActivity: now,
       workingDirectory,
       mode: 'default',
-      allowedTools: new Set() // Tools approved via "Allow All"
+      allowedTools: new Set(), // Tools approved via "Allow All"
+      sdkSessionId: null // Will be set when SDK initializes
     };
+
+    // Listen for SDK session ID so we can persist it for future resume
+    process.once('sdk_session_id', (sdkSessionId) => {
+      session.sdkSessionId = sdkSessionId;
+      try {
+        sessionDatabase.updateSdkSessionId(id, sdkSessionId);
+        console.log(`[SessionManager] SDK session ID captured for session ${id}: ${sdkSessionId}`);
+      } catch (err) {
+        console.error('Error persisting SDK session ID:', err.message);
+      }
+    });
+
+    process.start();
 
     this.sessions.set(id, session);
 
@@ -160,7 +174,29 @@ class SessionManager {
     if (session.process === null) {
       console.log(`Recovering session ${id} - starting new Claude process`);
 
-      const process = new ClaudeProcess(session.workingDirectory);
+      // Pass SDK session ID to resume conversation context
+      const resumeSessionId = session.sdkSessionId || null;
+      if (resumeSessionId) {
+        console.log(`[SessionManager] Will resume SDK session: ${resumeSessionId}`);
+      } else {
+        console.log(`[SessionManager] No SDK session ID available, starting fresh context`);
+      }
+
+      const process = new ClaudeProcess(session.workingDirectory, resumeSessionId);
+
+      // Listen for new SDK session ID (in case resume creates a new one)
+      process.once('sdk_session_id', (newSdkSessionId) => {
+        if (newSdkSessionId !== session.sdkSessionId) {
+          session.sdkSessionId = newSdkSessionId;
+          try {
+            sessionDatabase.updateSdkSessionId(id, newSdkSessionId);
+            console.log(`[SessionManager] SDK session ID updated for recovered session ${id}: ${newSdkSessionId}`);
+          } catch (err) {
+            console.error('Error updating SDK session ID:', err.message);
+          }
+        }
+      });
+
       process.start();
 
       // Restore mode if set

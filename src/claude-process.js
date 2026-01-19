@@ -34,17 +34,21 @@ const path = require('path');
  * @fires ClaudeProcess#agent_start - New agent task started
  * @fires ClaudeProcess#task_notification - Background task completed
  * @fires ClaudeProcess#exit_plan_mode_request - Plan mode exit requested
+ * @fires ClaudeProcess#sdk_session_id - SDK session ID received (for persistence)
  */
 class ClaudeProcess extends EventEmitter {
   /**
    * Create a new ClaudeProcess.
    *
    * @param {string} [workingDirectory] - Working directory for Claude operations
+   * @param {string} [resumeSessionId] - SDK session ID to resume (for context restoration)
    */
-  constructor(workingDirectory) {
+  constructor(workingDirectory, resumeSessionId = null) {
     super();
     /** @type {string} Working directory for file operations */
     this.workingDirectory = workingDirectory || process.cwd();
+    /** @type {string|null} SDK session ID to resume for context restoration */
+    this.resumeSessionId = resumeSessionId;
     /** @type {object|null} SDK query instance */
     this.queryInstance = null;
     /** @type {string[]} Queue of pending messages */
@@ -127,15 +131,11 @@ class ClaudeProcess extends EventEmitter {
     // Create async generator for streaming input
     const messageGenerator = this.createMessageGenerator();
 
-    // Start the SDK query with canUseTool callback
-    // Note: permissionMode is set to 'default' here, but we implement dynamic mode
-    // handling in canUseTool since modes can change mid-session
-    this.queryInstance = query({
-      prompt: messageGenerator,
-      options: {
-        cwd: this.workingDirectory,
-        permissionMode: 'default',
-        canUseTool: async (toolName, input, options) => {
+    // Build options for SDK query
+    const queryOptions = {
+      cwd: this.workingDirectory,
+      permissionMode: 'default',
+      canUseTool: async (toolName, input, options) => {
           console.log(`[canUseTool] Tool: ${toolName}, Mode: ${this.mode}`);
 
           // Handle AskUserQuestion specially - return user answers via updatedInput
@@ -182,7 +182,18 @@ class ClaudeProcess extends EventEmitter {
           console.log(`[canUseTool] Requesting permission for: ${toolName}`);
           return this.handlePermissionRequest(toolName, input, options);
         }
-      }
+    };
+
+    // Add resume option if we have an SDK session ID to resume
+    if (this.resumeSessionId) {
+      queryOptions.resume = this.resumeSessionId;
+      console.log(`[ClaudeProcess] Resuming SDK session: ${this.resumeSessionId}`);
+    }
+
+    // Start the SDK query
+    this.queryInstance = query({
+      prompt: messageGenerator,
+      options: queryOptions
     });
 
     // Process streaming responses
@@ -232,6 +243,9 @@ class ClaudeProcess extends EventEmitter {
       case 'system':
         if (msg.subtype === 'init') {
           this.sessionId = msg.session_id;
+          // Emit sdk_session_id event so it can be persisted for future resume
+          this.emit('sdk_session_id', msg.session_id);
+          console.log(`[ClaudeProcess] SDK session initialized: ${msg.session_id}`);
         } else if (msg.subtype === 'task_notification') {
           // Handle background task completion notification
           const taskId = msg.task_id;
