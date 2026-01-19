@@ -109,6 +109,10 @@ async function handleMessage(ws, msg, ctx) {
       handleListSessions(ws);
       break;
 
+    case 'list_agents':
+      handleListAgents(ws, msg, getCurrentSession);
+      break;
+
     case 'terminal_create':
       handleTerminalCreate(ws, msg, getCurrentSession);
       break;
@@ -340,6 +344,28 @@ function setupSessionListeners(ws, session) {
       toolUseId: data.request?.tool_use_id
     }));
   });
+
+  proc.on('agent_start', (data) => {
+    ws.send(JSON.stringify({
+      type: 'agent_start',
+      taskId: data.taskId,
+      description: data.description,
+      agentType: data.agentType,
+      startTime: data.startTime
+    }));
+  });
+
+  proc.on('task_notification', (data) => {
+    ws.send(JSON.stringify({
+      type: 'task_notification',
+      taskId: data.taskId,
+      status: data.status,
+      summary: data.summary,
+      outputFile: data.outputFile,
+      description: data.description,
+      agentType: data.agentType
+    }));
+  });
 }
 
 function handleUserMessage(ws, msg, getCurrentSession) {
@@ -440,6 +466,24 @@ function handleListSessions(ws) {
   ws.send(JSON.stringify({
     type: 'sessions_list',
     sessions
+  }));
+}
+
+function handleListAgents(ws, msg, getCurrentSession) {
+  const session = getCurrentSession();
+
+  if (!session) {
+    ws.send(JSON.stringify({
+      type: 'agents_list',
+      agents: []
+    }));
+    return;
+  }
+
+  const agents = sessionManager.listAgents(session.id);
+  ws.send(JSON.stringify({
+    type: 'agents_list',
+    agents
   }));
 }
 

@@ -20,6 +20,9 @@ class App {
       plan: { icon: '&#128203;', label: 'Plan Mode', class: 'mode-plan' }
     };
 
+    // Child agent tracking
+    this.activeAgents = new Map(); // taskId -> agent info
+
     this.init();
   }
 
@@ -276,6 +279,11 @@ class App {
     // Mode changed handler
     this.ws.on('mode_changed', (data) => this.onModeChanged(data));
 
+    // Child agent event handlers
+    this.ws.on('agent_start', (data) => this.onAgentStart(data));
+    this.ws.on('task_notification', (data) => this.onTaskNotification(data));
+    this.ws.on('agents_list', (data) => this.onAgentsList(data));
+
     try {
       await this.ws.connect();
     } catch (err) {
@@ -355,10 +363,6 @@ class App {
       } else {
         this.renderSessionPicker(sessions);
       }
-    }
-    // Also update agents panel if visible
-    if (this.elements.agentsPanel.classList.contains('show')) {
-      this.renderAgentsList(sessions);
     }
   }
 
@@ -780,7 +784,7 @@ class App {
     this.elements.appContainer.classList.remove('terminal-open');
   }
 
-  // Agent Activity Panel methods
+  // Child Agent Activity Panel methods
   toggleAgentsPanel() {
     if (this.elements.agentsPanel.classList.contains('show')) {
       this.closeAgentsPanel();
@@ -792,82 +796,171 @@ class App {
   openAgentsPanel() {
     this.elements.agentsPanel.classList.add('show');
     this.elements.agentsToggleBtn.classList.add('active');
-    // Request fresh session list
+    // Request fresh agent list
     if (this.ws && this.ws.isConnected()) {
-      this.ws.listSessions();
+      this.ws.listAgents();
     }
-    // Start auto-refresh
-    this.startAgentsRefresh();
+    // Render current agents
+    this.renderAgentsList();
+    // Start elapsed time updater
+    this.startAgentsTimeUpdater();
   }
 
   closeAgentsPanel() {
     this.elements.agentsPanel.classList.remove('show');
     this.elements.agentsToggleBtn.classList.remove('active');
-    // Stop auto-refresh
-    this.stopAgentsRefresh();
+    // Stop elapsed time updater
+    this.stopAgentsTimeUpdater();
   }
 
-  startAgentsRefresh() {
-    // Refresh agent list every 3 seconds while panel is open
-    this.agentsRefreshInterval = setInterval(() => {
-      if (this.ws && this.ws.isConnected() && this.elements.agentsPanel.classList.contains('show')) {
-        this.ws.listSessions();
+  startAgentsTimeUpdater() {
+    // Update elapsed time every second while panel is open
+    this.agentsTimeInterval = setInterval(() => {
+      if (this.elements.agentsPanel.classList.contains('show')) {
+        this.updateAgentsElapsedTime();
       }
-    }, 3000);
+    }, 1000);
   }
 
-  stopAgentsRefresh() {
-    if (this.agentsRefreshInterval) {
-      clearInterval(this.agentsRefreshInterval);
-      this.agentsRefreshInterval = null;
+  stopAgentsTimeUpdater() {
+    if (this.agentsTimeInterval) {
+      clearInterval(this.agentsTimeInterval);
+      this.agentsTimeInterval = null;
     }
   }
 
-  renderAgentsList(sessions) {
+  updateAgentsElapsedTime() {
+    const timeElements = this.elements.agentsList.querySelectorAll('.agent-elapsed-time');
+    const now = Date.now();
+    timeElements.forEach(el => {
+      const startTime = parseInt(el.dataset.startTime, 10);
+      if (startTime) {
+        const elapsed = Math.floor((now - startTime) / 1000);
+        el.textContent = this.formatElapsedTime(elapsed);
+      }
+    });
+  }
+
+  formatElapsedTime(seconds) {
+    if (seconds < 60) {
+      return `${seconds}s`;
+    }
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s`;
+  }
+
+  onAgentStart(data) {
+    // Add agent to local tracking
+    this.activeAgents.set(data.taskId, {
+      taskId: data.taskId,
+      description: data.description,
+      agentType: data.agentType,
+      startTime: data.startTime,
+      status: 'running'
+    });
+
+    // Re-render if panel is open
+    if (this.elements.agentsPanel.classList.contains('show')) {
+      this.renderAgentsList();
+    }
+  }
+
+  onTaskNotification(data) {
+    // Update agent status
+    const agent = this.activeAgents.get(data.taskId);
+    if (agent) {
+      agent.status = data.status;
+      agent.summary = data.summary;
+    } else {
+      // Agent wasn't tracked (maybe page was reloaded), add it now
+      this.activeAgents.set(data.taskId, {
+        taskId: data.taskId,
+        description: data.description,
+        agentType: data.agentType,
+        status: data.status,
+        summary: data.summary
+      });
+    }
+
+    // Re-render if panel is open
+    if (this.elements.agentsPanel.classList.contains('show')) {
+      this.renderAgentsList();
+    }
+
+    // Remove completed agents after a delay (keep visible for a bit)
+    if (data.status === 'completed' || data.status === 'failed' || data.status === 'stopped') {
+      setTimeout(() => {
+        this.activeAgents.delete(data.taskId);
+        if (this.elements.agentsPanel.classList.contains('show')) {
+          this.renderAgentsList();
+        }
+      }, 10000); // Keep visible for 10 seconds
+    }
+  }
+
+  onAgentsList(agents) {
+    // Sync local tracking with server state
+    this.activeAgents.clear();
+    for (const agent of agents) {
+      this.activeAgents.set(agent.taskId, agent);
+    }
+
+    // Re-render if panel is open
+    if (this.elements.agentsPanel.classList.contains('show')) {
+      this.renderAgentsList();
+    }
+  }
+
+  renderAgentsList() {
     const list = this.elements.agentsList;
 
-    if (!sessions || sessions.length === 0) {
-      list.innerHTML = '<div class="agents-empty">No active agents</div>';
+    if (this.activeAgents.size === 0) {
+      list.innerHTML = '<div class="agents-empty">No active child agents</div>';
       return;
     }
 
     list.innerHTML = '';
-    for (const session of sessions) {
+    for (const [taskId, agent] of this.activeAgents) {
       const item = document.createElement('div');
-      item.className = 'agent-item' + (session.id === this.currentSessionId ? ' current' : '');
+      item.className = 'agent-item';
 
-      const statusClass = session.isProcessing ? 'processing' : 'idle';
-      const statusText = session.isProcessing ? 'Processing' : 'Idle';
+      const statusClass = agent.status || 'running';
+      const statusText = this.getStatusText(agent.status);
 
-      const created = new Date(session.createdAt);
-      const timeStr = created.toLocaleTimeString();
+      // Short task ID
+      const shortId = taskId.substring(0, 8);
 
-      // Get short directory name
-      const dirName = session.workingDirectory ?
-        session.workingDirectory.split('/').pop() || session.workingDirectory :
-        'Unknown';
+      // Agent type label
+      const typeLabel = agent.agentType || 'Task';
 
       item.innerHTML = `
         <div class="agent-item-header">
-          <span class="agent-item-id">${dirName}</span>
+          <span class="agent-item-type">${typeLabel}</span>
           <span class="agent-status ${statusClass}">
             <span class="agent-status-dot"></span>
             ${statusText}
           </span>
         </div>
-        ${session.workingDirectory ? `<div class="agent-item-dir">${session.workingDirectory}</div>` : ''}
+        <div class="agent-item-description">${agent.description || 'Running task...'}</div>
         <div class="agent-item-meta">
-          <span class="agent-item-messages">${session.historyLength} messages</span>
-          <span class="agent-item-time">${timeStr}</span>
+          <span class="agent-item-id">${shortId}</span>
+          ${agent.startTime ? `<span class="agent-elapsed-time" data-start-time="${agent.startTime}">${this.formatElapsedTime(Math.floor((Date.now() - agent.startTime) / 1000))}</span>` : ''}
         </div>
+        ${agent.summary ? `<div class="agent-item-summary">${agent.summary}</div>` : ''}
       `;
 
-      item.addEventListener('click', () => {
-        this.switchSession(session.id);
-        this.closeAgentsPanel();
-      });
-
       list.appendChild(item);
+    }
+  }
+
+  getStatusText(status) {
+    switch (status) {
+      case 'running': return 'Running';
+      case 'completed': return 'Completed';
+      case 'failed': return 'Failed';
+      case 'stopped': return 'Stopped';
+      default: return 'Running';
     }
   }
 

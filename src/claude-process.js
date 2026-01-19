@@ -14,6 +14,7 @@ class ClaudeProcess extends EventEmitter {
     this.pendingPrompts = new Map(); // requestId -> {resolve} for AskUserQuestion
     this.isProcessing = false;
     this.mode = 'default'; // 'default', 'acceptEdits', or 'plan'
+    this.activeAgents = new Map(); // taskId -> { description, agentType, startTime }
   }
 
   setMode(mode) {
@@ -100,6 +101,22 @@ class ClaudeProcess extends EventEmitter {
       case 'system':
         if (msg.subtype === 'init') {
           this.sessionId = msg.session_id;
+        } else if (msg.subtype === 'task_notification') {
+          // Handle background task completion notification
+          const taskId = msg.task_id;
+          const agentInfo = this.activeAgents.get(taskId);
+
+          this.emit('task_notification', {
+            taskId: taskId,
+            status: msg.status,  // 'completed' | 'failed' | 'stopped'
+            outputFile: msg.output_file,
+            summary: msg.summary,
+            description: agentInfo?.description || 'Unknown task',
+            agentType: agentInfo?.agentType || 'unknown'
+          });
+
+          // Remove from active agents
+          this.activeAgents.delete(taskId);
         }
         this.emit('system', msg);
         break;
@@ -111,6 +128,26 @@ class ClaudeProcess extends EventEmitter {
             if (block.type === 'text') {
               this.emit('chunk', { index: 0, text: block.text });
             } else if (block.type === 'tool_use') {
+              // Track Task tool invocations as agent starts
+              if (block.name === 'Task') {
+                const taskId = block.id;
+                const description = block.input?.description || 'Agent task';
+                const agentType = block.input?.subagent_type || 'unknown';
+
+                this.activeAgents.set(taskId, {
+                  description,
+                  agentType,
+                  startTime: Date.now()
+                });
+
+                this.emit('agent_start', {
+                  taskId,
+                  description,
+                  agentType,
+                  startTime: Date.now()
+                });
+              }
+
               // AskUserQuestion is handled in canUseTool callback, not here
               this.emit('tool_use', {
                 id: block.id,
@@ -267,6 +304,20 @@ class ClaudeProcess extends EventEmitter {
 
   isRunning() {
     return this.queryInstance !== null;
+  }
+
+  getActiveAgents() {
+    const agents = [];
+    for (const [taskId, info] of this.activeAgents) {
+      agents.push({
+        taskId,
+        description: info.description,
+        agentType: info.agentType,
+        startTime: info.startTime,
+        status: 'running'
+      });
+    }
+    return agents;
   }
 }
 

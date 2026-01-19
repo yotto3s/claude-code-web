@@ -150,11 +150,18 @@ class SessionManager {
         lastActivity: session.lastActivity,
         historyLength: session.history.length,
         isProcessing: session.process.isProcessing,
-        workingDirectory: session.workingDirectory
+        workingDirectory: session.workingDirectory,
+        agents: session.process.getActiveAgents()
       });
     }
 
     return sessions;
+  }
+
+  listAgents(sessionId) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return [];
+    return session.process.getActiveAgents();
   }
 
   getSessionCount() {

@@ -177,6 +177,30 @@ class WebSocketClient {
         this.emit('mode_changed', { mode: msg.mode });
         break;
 
+      case 'agent_start':
+        this.emit('agent_start', {
+          taskId: msg.taskId,
+          description: msg.description,
+          agentType: msg.agentType,
+          startTime: msg.startTime
+        });
+        break;
+
+      case 'task_notification':
+        this.emit('task_notification', {
+          taskId: msg.taskId,
+          status: msg.status,
+          summary: msg.summary,
+          outputFile: msg.outputFile,
+          description: msg.description,
+          agentType: msg.agentType
+        });
+        break;
+
+      case 'agents_list':
+        this.emit('agents_list', msg.agents);
+        break;
+
       default:
         console.log('Unknown message type:', msg.type, msg);
     }
@@ -226,6 +250,10 @@ class WebSocketClient {
 
   sendPermissionResponse(requestId, decision, toolInput) {
     return this.send('permission_response', { requestId, decision, toolInput });
+  }
+
+  listAgents() {
+    return this.send('list_agents');
   }
 
   on(event, handler) {
