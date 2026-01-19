@@ -48,7 +48,7 @@ class ClaudeProcess extends EventEmitter {
             const editTools = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
             if (editTools.includes(toolName)) {
               console.log(`[canUseTool] Auto-approving edit tool: ${toolName}`);
-              return { behavior: 'allow' };
+              return { behavior: 'allow', updatedInput: input };
             }
           }
 

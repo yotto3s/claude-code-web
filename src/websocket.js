@@ -14,6 +14,20 @@ function parseCookies(cookieHeader) {
   return cookies;
 }
 
+// Safely send a message, checking if WebSocket is still open
+function safeSend(ws, data) {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data));
+    return true;
+  }
+  return false;
+}
+
+// Check if WebSocket is still connected
+function isWsOpen(ws) {
+  return ws.readyState === WebSocket.OPEN;
+}
+
 function setupWebSocket(server) {
   // Import auth functions from server.js (they're exported)
   const { verifySessionToken, USERS, SINGLE_USER_MODE } = require('../server');
@@ -173,7 +187,7 @@ function handleCreateSession(ws, msg, setSession) {
 
     setupSessionListeners(ws, session);
 
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'session_created',
       session: {
         id: session.id,
@@ -181,7 +195,7 @@ function handleCreateSession(ws, msg, setSession) {
         createdAt: session.createdAt,
         workingDirectory: session.workingDirectory
       }
-    }));
+    });
   } catch (err) {
     sendError(ws, err.message);
   }
@@ -199,7 +213,7 @@ function handleJoinSession(ws, msg, setSession) {
   setupSessionListeners(ws, session);
 
   // Send session info and history
-  ws.send(JSON.stringify({
+  safeSend(ws, {
     type: 'session_joined',
     session: {
       id: session.id,
@@ -209,7 +223,7 @@ function handleJoinSession(ws, msg, setSession) {
       mode: session.mode || 'default'
     },
     history: session.history
-  }));
+  });
 }
 
 function handleRenameSession(ws, msg, getCurrentSession) {
@@ -229,11 +243,11 @@ function handleRenameSession(ws, msg, getCurrentSession) {
   const success = sessionManager.renameSession(session.id, newName);
 
   if (success) {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'session_renamed',
       sessionId: session.id,
       name: newName
-    }));
+    });
   } else {
     sendError(ws, 'Failed to rename session');
   }
@@ -246,56 +260,56 @@ function setupSessionListeners(ws, session) {
   proc.removeAllListeners();
 
   proc.on('chunk', (data) => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'chunk',
       text: data.text,
       index: data.index
-    }));
+    });
   });
 
   proc.on('content_start', (data) => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'content_start',
       contentBlock: data.contentBlock,
       index: data.index
-    }));
+    });
   });
 
   proc.on('content_stop', (data) => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'content_stop',
       index: data.index
-    }));
+    });
   });
 
   proc.on('tool_input_delta', (data) => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'tool_input_delta',
       json: data.json,
       index: data.index
-    }));
+    });
   });
 
   proc.on('message_start', (data) => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'message_start',
       message: data
-    }));
+    });
   });
 
   proc.on('message_delta', (data) => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'message_delta',
       stopReason: data.stopReason,
       usage: data.usage
-    }));
+    });
   });
 
   proc.on('complete', (data) => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'complete',
       messageId: data.messageId
-    }));
+    });
   });
 
   proc.on('result', (data) => {
@@ -305,97 +319,102 @@ function setupSessionListeners(ws, session) {
       content: data.result || ''
     });
 
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'result',
       data
-    }));
+    });
   });
 
   proc.on('error', (data) => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'error',
       message: data.message,
       code: data.code
-    }));
+    });
   });
 
   proc.on('cancelled', () => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'cancelled'
-    }));
+    });
   });
 
   proc.on('text', (text) => {
     // Plain text output (non-JSON)
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'text',
       content: text
-    }));
+    });
   });
 
   proc.on('system', (data) => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'system',
       data
-    }));
+    });
   });
 
   proc.on('close', (code) => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'process_closed',
       code
-    }));
+    });
 
-    // Restart the Claude process for the same session so user can continue
-    session.process.start();
-    setupSessionListeners(ws, session);
+    // Only restart and re-attach listeners if WebSocket is still connected
+    if (isWsOpen(ws)) {
+      // Restart the Claude process for the same session so user can continue
+      session.process.start();
+      setupSessionListeners(ws, session);
 
-    // Restore the mode from session to the restarted process
-    if (session.mode && typeof session.process.setMode === 'function') {
-      session.process.setMode(session.mode);
+      // Restore the mode from session to the restarted process
+      if (session.mode && typeof session.process.setMode === 'function') {
+        session.process.setMode(session.mode);
+      }
+    } else {
+      console.log(`WebSocket closed, not restarting process for session ${session.id}`);
     }
   });
 
   proc.on('stderr', (text) => {
     console.error('[Claude stderr]', text);
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'stderr',
       text
-    }));
+    });
   });
 
   proc.on('prompt', (data) => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'prompt',
       requestId: data.request_id,
       toolUseId: data.toolUseId,
       toolName: data.toolName,
       input: data.input
-    }));
+    });
   });
 
   proc.on('permission_request', (data) => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'permission_request',
       requestId: data.request_id,
       toolName: data.request?.tool_name,
       toolInput: data.request?.input,
       toolUseId: data.request?.tool_use_id
-    }));
+    });
   });
 
   proc.on('agent_start', (data) => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'agent_start',
       taskId: data.taskId,
       description: data.description,
       agentType: data.agentType,
       startTime: data.startTime
-    }));
+    });
   });
 
   proc.on('task_notification', (data) => {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'task_notification',
       taskId: data.taskId,
       status: data.status,
@@ -403,7 +422,7 @@ function setupSessionListeners(ws, session) {
       outputFile: data.outputFile,
       description: data.description,
       agentType: data.agentType
-    }));
+    });
   });
 }
 
@@ -432,9 +451,9 @@ function handleUserMessage(ws, msg, getCurrentSession) {
   if (!success) {
     sendError(ws, 'Failed to send message to Claude');
   } else {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'message_sent'
-    }));
+    });
   }
 }
 
@@ -502,28 +521,28 @@ function handlePermissionResponse(ws, msg, getCurrentSession) {
 
 function handleListSessions(ws) {
   const sessions = sessionManager.listSessions();
-  ws.send(JSON.stringify({
+  safeSend(ws, {
     type: 'sessions_list',
     sessions
-  }));
+  });
 }
 
 function handleListAgents(ws, msg, getCurrentSession) {
   const session = getCurrentSession();
 
   if (!session) {
-    ws.send(JSON.stringify({
+    safeSend(ws, {
       type: 'agents_list',
       agents: []
-    }));
+    });
     return;
   }
 
   const agents = sessionManager.listAgents(session.id);
-  ws.send(JSON.stringify({
+  safeSend(ws, {
     type: 'agents_list',
     agents
-  }));
+  });
 }
 
 function handleSetMode(ws, msg, getCurrentSession) {
@@ -549,17 +568,17 @@ function handleSetMode(ws, msg, getCurrentSession) {
   }
 
   // Send confirmation
-  ws.send(JSON.stringify({
+  safeSend(ws, {
     type: 'mode_changed',
     mode: msg.mode
-  }));
+  });
 }
 
 function sendError(ws, message) {
-  ws.send(JSON.stringify({
+  safeSend(ws, {
     type: 'error',
     message
-  }));
+  });
 }
 
 function handleTerminalCreate(ws, msg, getCurrentSession) {
@@ -576,35 +595,35 @@ function handleTerminalCreate(ws, msg, getCurrentSession) {
 
   // Check if terminal already exists
   let terminal = terminalManager.getTerminal(terminalId);
-  
+
   if (!terminal) {
     terminal = terminalManager.createTerminal(terminalId, cwd, username);
 
     terminal.on('data', (data) => {
-      ws.send(JSON.stringify({
+      safeSend(ws, {
         type: 'terminal_data',
         terminalId: terminalId,
         data: data
-      }));
+      });
     });
 
     terminal.on('exit', ({ exitCode, signal }) => {
-      ws.send(JSON.stringify({
+      safeSend(ws, {
         type: 'terminal_exit',
         terminalId: terminalId,
         exitCode,
         signal
-      }));
+      });
     });
 
     terminal.start();
   }
 
-  ws.send(JSON.stringify({
+  safeSend(ws, {
     type: 'terminal_created',
     terminalId: terminalId,
     cwd: terminal.cwd
-  }));
+  });
 }
 
 function handleTerminalInput(ws, msg) {
@@ -653,11 +672,11 @@ function handleTerminalClose(ws, msg) {
 
   const success = terminalManager.terminateSession(terminalId);
 
-  ws.send(JSON.stringify({
+  safeSend(ws, {
     type: 'terminal_closed',
     terminalId: terminalId,
     success
-  }));
+  });
 }
 
 function getClientIP(req) {
