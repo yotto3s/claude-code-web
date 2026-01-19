@@ -20,6 +20,7 @@ class ClaudeProcess extends EventEmitter {
   setMode(mode) {
     const validModes = ['default', 'acceptEdits', 'plan'];
     if (validModes.includes(mode)) {
+      console.log(`[ClaudeProcess] Mode changed from '${this.mode}' to '${mode}'`);
       this.mode = mode;
     }
   }
@@ -35,6 +36,8 @@ class ClaudeProcess extends EventEmitter {
         cwd: this.workingDirectory,
         permissionMode: 'default',
         canUseTool: async (toolName, input, options) => {
+          console.log(`[canUseTool] Tool: ${toolName}, Mode: ${this.mode}`);
+
           // Handle AskUserQuestion specially - return user answers via updatedInput
           if (toolName === 'AskUserQuestion') {
             return this.handleAskUserQuestion(toolName, input, options);
@@ -44,11 +47,13 @@ class ClaudeProcess extends EventEmitter {
           if (this.mode === 'acceptEdits') {
             const editTools = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
             if (editTools.includes(toolName)) {
+              console.log(`[canUseTool] Auto-approving edit tool: ${toolName}`);
               return { behavior: 'allow' };
             }
           }
 
           // Default and Plan mode: go through permission flow
+          console.log(`[canUseTool] Requesting permission for: ${toolName}`);
           return this.handlePermissionRequest(toolName, input, options);
         }
       }
