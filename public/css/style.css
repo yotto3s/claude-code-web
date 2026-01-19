@@ -1691,6 +1691,22 @@ html, body {
   transition: all 0.2s;
 }
 
+/* Exit Plan Mode Prompt */
+.exit-plan-mode-prompt .permission-title {
+  color: var(--primary-color);
+}
+
+.exit-plan-mode-prompt {
+  border-color: var(--primary-color);
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, rgba(139, 92, 246, 0.05) 100%);
+}
+
+.exit-plan-mode-description {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
 .btn-danger {
   background: var(--error-color);
   color: white;

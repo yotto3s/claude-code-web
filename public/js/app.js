@@ -289,6 +289,9 @@ class App {
     // Mode changed handler
     this.ws.on('mode_changed', (data) => this.onModeChanged(data));
 
+    // Exit plan mode request handler
+    this.ws.on('exit_plan_mode_request', (data) => this.onExitPlanModeRequest(data));
+
     // Child agent event handlers
     this.ws.on('agent_start', (data) => this.onAgentStart(data));
     this.ws.on('task_notification', (data) => this.onTaskNotification(data));
@@ -1065,6 +1068,17 @@ class App {
     if (data.mode && this.modeConfig[data.mode]) {
       this.setModeUI(data.mode);
     }
+  }
+
+  onExitPlanModeRequest(data) {
+    // Remove tool indicator since we're showing a prompt
+    this.chatUI.removeToolIndicator();
+    this.currentTool = null;
+
+    // Show the exit plan mode confirmation prompt
+    this.chatUI.showExitPlanModePrompt(data, (requestId, approved) => {
+      this.ws.send('exit_plan_mode_response', { requestId, approved });
+    });
   }
 
   async logout() {

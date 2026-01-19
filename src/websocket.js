@@ -151,6 +151,10 @@ async function handleMessage(ws, msg, ctx) {
       handleSetMode(ws, msg, getCurrentSession);
       break;
 
+    case 'exit_plan_mode_response':
+      handleExitPlanModeResponse(ws, msg, getCurrentSession);
+      break;
+
     default:
       sendError(ws, `Unknown message type: ${msg.type}`);
   }
@@ -444,6 +448,15 @@ function setupSessionListeners(ws, session) {
       agentType: data.agentType
     });
   });
+
+  proc.on('exit_plan_mode_request', (data) => {
+    safeSend(ws, {
+      type: 'exit_plan_mode_request',
+      requestId: data.request_id,
+      toolUseId: data.toolUseId,
+      input: data.input
+    });
+  });
 }
 
 function handleUserMessage(ws, msg, getCurrentSession) {
@@ -593,6 +606,44 @@ function handleSetMode(ws, msg, getCurrentSession) {
     type: 'mode_changed',
     mode: msg.mode
   });
+}
+
+function handleExitPlanModeResponse(ws, msg, getCurrentSession) {
+  const session = getCurrentSession();
+
+  if (!session) {
+    sendError(ws, 'No active session');
+    return;
+  }
+
+  if (!msg.requestId || typeof msg.approved !== 'boolean') {
+    sendError(ws, 'Request ID and approved status are required');
+    return;
+  }
+
+  // Send response to the pending exit plan mode request
+  const success = session.process.sendExitPlanModeResponse(msg.requestId, msg.approved);
+
+  if (!success) {
+    sendError(ws, 'Failed to send exit plan mode response');
+    return;
+  }
+
+  // If approved, switch to default mode
+  if (msg.approved) {
+    session.mode = 'default';
+    sessionManager.setSessionMode(session.id, 'default');
+
+    if (session.process && typeof session.process.setMode === 'function') {
+      session.process.setMode('default');
+    }
+
+    // Send mode changed confirmation
+    safeSend(ws, {
+      type: 'mode_changed',
+      mode: 'default'
+    });
+  }
 }
 
 function sendError(ws, message) {

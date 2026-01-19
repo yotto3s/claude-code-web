@@ -497,6 +497,67 @@ class ChatUI {
     this.scrollToBottom();
   }
 
+  showExitPlanModePrompt(data, onResponse) {
+    this.removePrompt();
+
+    const promptContainer = document.createElement('div');
+    promptContainer.className = 'prompt-container permission-prompt exit-plan-mode-prompt';
+
+    const requestId = data.requestId;
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'permission-header';
+    header.innerHTML = `
+      <span class="permission-icon">📋</span>
+      <span class="permission-title">Exit Plan Mode?</span>
+    `;
+    promptContainer.appendChild(header);
+
+    // Description
+    const description = document.createElement('div');
+    description.className = 'permission-tool-info';
+    description.innerHTML = `
+      <div class="exit-plan-mode-description">
+        Claude wants to exit plan mode and proceed with implementation.
+        <br><br>
+        Approving will switch from <strong>Plan Mode</strong> to <strong>Default Mode</strong>,
+        allowing Claude to execute commands and make changes.
+      </div>
+    `;
+    promptContainer.appendChild(description);
+
+    // Buttons container
+    const buttonsDiv = document.createElement('div');
+    buttonsDiv.className = 'permission-buttons';
+
+    // Approve button
+    const approveBtn = document.createElement('button');
+    approveBtn.className = 'btn btn-primary permission-btn';
+    approveBtn.textContent = 'Approve';
+    approveBtn.addEventListener('click', () => {
+      this.removePrompt();
+      onResponse(requestId, true);
+    });
+
+    // Deny button
+    const denyBtn = document.createElement('button');
+    denyBtn.className = 'btn btn-danger permission-btn';
+    denyBtn.textContent = 'Stay in Plan Mode';
+    denyBtn.addEventListener('click', () => {
+      this.removePrompt();
+      onResponse(requestId, false);
+    });
+
+    buttonsDiv.appendChild(approveBtn);
+    buttonsDiv.appendChild(denyBtn);
+    promptContainer.appendChild(buttonsDiv);
+
+    this.container.appendChild(promptContainer);
+    this.currentPrompt = promptContainer;
+    this.scrollToBottom();
+  }
+
   scrollToBottom() {
     requestAnimationFrame(() => {
       this.container.scrollTop = this.container.scrollHeight;

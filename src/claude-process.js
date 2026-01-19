@@ -47,9 +47,15 @@ class ClaudeProcess extends EventEmitter {
 
           // Plan mode: only allow read-only tools, deny all write/execute operations
           if (this.mode === 'plan') {
+            // ExitPlanMode requires user approval to switch modes
+            if (toolName === 'ExitPlanMode') {
+              console.log(`[canUseTool] Plan mode: ExitPlanMode called, requesting user approval`);
+              return this.handleExitPlanModeRequest(toolName, input, options);
+            }
+
             const readOnlyTools = [
               'Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch',
-              'Task', 'TodoWrite', 'EnterPlanMode', 'ExitPlanMode'
+              'Task', 'TodoWrite', 'EnterPlanMode'
             ];
             if (readOnlyTools.includes(toolName)) {
               console.log(`[canUseTool] Plan mode: allowing read-only tool: ${toolName}`);
@@ -261,6 +267,51 @@ class ClaudeProcess extends EventEmitter {
     }
 
     pending.resolve(answers);
+    return true;
+  }
+
+  async handleExitPlanModeRequest(toolName, input, options) {
+    // Generate unique request ID for the exit plan mode request
+    const requestId = `exit_plan_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Emit event to frontend requesting approval to exit plan mode
+    this.emit('exit_plan_mode_request', {
+      request_id: requestId,
+      toolUseId: options?.toolUseID,
+      input: input
+    });
+
+    // Wait for user response (with 120s timeout)
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        this.pendingPrompts.delete(requestId);
+        resolve({ behavior: 'deny', message: 'Exit plan mode request timed out' });
+      }, 120000);
+
+      this.pendingPrompts.set(requestId, {
+        resolve: (approved) => {
+          clearTimeout(timeout);
+          this.pendingPrompts.delete(requestId);
+          if (approved) {
+            // User approved - allow the tool and switch mode
+            resolve({ behavior: 'allow', updatedInput: input });
+          } else {
+            // User denied - deny the tool
+            resolve({ behavior: 'deny', message: 'User denied exiting plan mode' });
+          }
+        }
+      });
+    });
+  }
+
+  sendExitPlanModeResponse(requestId, approved) {
+    const pending = this.pendingPrompts.get(requestId);
+    if (!pending) {
+      console.log('sendExitPlanModeResponse: No pending request for requestId:', requestId);
+      return false;
+    }
+
+    pending.resolve(approved);
     return true;
   }
 
