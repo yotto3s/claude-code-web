@@ -15,6 +15,7 @@ class ClaudeProcess extends EventEmitter {
     this.isProcessing = false;
     this.mode = 'default'; // 'default', 'acceptEdits', or 'plan'
     this.activeAgents = new Map(); // taskId -> { description, agentType, startTime }
+    this.agentContextStack = []; // Stack of active agent taskIds for tracking nested agents
   }
 
   setMode(mode) {
@@ -144,6 +145,12 @@ class ClaudeProcess extends EventEmitter {
 
           // Remove from active agents
           this.activeAgents.delete(taskId);
+
+          // Pop from agent context stack
+          const stackIndex = this.agentContextStack.indexOf(taskId);
+          if (stackIndex !== -1) {
+            this.agentContextStack.splice(stackIndex, 1);
+          }
         }
         this.emit('system', msg);
         break;
@@ -167,6 +174,9 @@ class ClaudeProcess extends EventEmitter {
                   startTime: Date.now()
                 });
 
+                // Push this agent onto the context stack
+                this.agentContextStack.push(taskId);
+
                 this.emit('agent_start', {
                   taskId,
                   description,
@@ -175,11 +185,18 @@ class ClaudeProcess extends EventEmitter {
                 });
               }
 
+              // Get current agent context (if any) for non-Task tools
+              // Task tools themselves are shown in main chat, but their child tools go to the panel
+              const currentAgentId = block.name !== 'Task' && this.agentContextStack.length > 0
+                ? this.agentContextStack[this.agentContextStack.length - 1]
+                : null;
+
               // AskUserQuestion is handled in canUseTool callback, not here
               this.emit('tool_use', {
                 id: block.id,
                 name: block.name,
-                input: block.input
+                input: block.input,
+                agentId: currentAgentId
               });
             }
           }

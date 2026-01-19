@@ -423,7 +423,8 @@ function setupSessionListeners(ws, session) {
       type: 'tool_use',
       id: data.id,
       name: data.name,
-      input: data.input
+      input: data.input,
+      agentId: data.agentId || null
     });
   });
 

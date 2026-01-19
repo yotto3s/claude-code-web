@@ -23,6 +23,7 @@ class App {
 
     // Child agent tracking
     this.activeAgents = new Map(); // taskId -> agent info
+    this.agentTools = new Map(); // taskId -> array of tool executions
 
     this.init();
   }
@@ -482,8 +483,31 @@ class App {
   }
 
   onToolUse(data) {
-    // Display tool execution in the chat
-    this.chatUI.showToolExecution(data.name, data.input);
+    // Check if this tool belongs to a child agent
+    if (data.agentId && this.activeAgents.has(data.agentId)) {
+      // Display in the agent panel instead of main chat
+      this.showAgentToolExecution(data.agentId, data.name, data.input);
+    } else {
+      // Display tool execution in the main chat
+      this.chatUI.showToolExecution(data.name, data.input);
+    }
+  }
+
+  showAgentToolExecution(agentId, toolName, toolInput) {
+    // Track the tool for this agent
+    if (!this.agentTools.has(agentId)) {
+      this.agentTools.set(agentId, []);
+    }
+    this.agentTools.get(agentId).push({
+      name: toolName,
+      input: toolInput,
+      time: new Date()
+    });
+
+    // Re-render if panel is open to show the new tool
+    if (this.elements.agentsPanel.classList.contains('show')) {
+      this.renderAgentsList();
+    }
   }
 
   sendMessage() {
@@ -902,6 +926,9 @@ class App {
       status: 'running'
     });
 
+    // Initialize tools array for this agent
+    this.agentTools.set(data.taskId, []);
+
     // Re-render if panel is open
     if (this.elements.agentsPanel.classList.contains('show')) {
       this.renderAgentsList();
@@ -934,6 +961,7 @@ class App {
     if (data.status === 'completed' || data.status === 'failed' || data.status === 'stopped') {
       setTimeout(() => {
         this.activeAgents.delete(data.taskId);
+        this.agentTools.delete(data.taskId); // Clean up tools tracking
         if (this.elements.agentsPanel.classList.contains('show')) {
           this.renderAgentsList();
         }
@@ -976,6 +1004,47 @@ class App {
       // Agent type label
       const typeLabel = agent.agentType || 'Task';
 
+      // Get tools for this agent
+      const tools = this.agentTools.get(taskId) || [];
+      const toolsCount = tools.length;
+
+      // Build tools HTML
+      let toolsHtml = '';
+      if (toolsCount > 0) {
+        const toolsListHtml = tools.map(tool => {
+          let inputDisplay = '';
+          if (tool.input) {
+            if (tool.input.command) {
+              inputDisplay = this.escapeHtml(tool.input.command.substring(0, 60)) + (tool.input.command.length > 60 ? '...' : '');
+            } else if (tool.input.file_path) {
+              inputDisplay = this.escapeHtml(tool.input.file_path);
+            } else if (tool.input.pattern) {
+              inputDisplay = this.escapeHtml(tool.input.pattern);
+            } else if (tool.input.query) {
+              inputDisplay = this.escapeHtml(tool.input.query.substring(0, 40)) + (tool.input.query.length > 40 ? '...' : '');
+            }
+          }
+          return `
+            <div class="agent-tool-item">
+              <span class="agent-tool-name">${this.escapeHtml(tool.name)}</span>
+              ${inputDisplay ? `<span class="agent-tool-input">${inputDisplay}</span>` : ''}
+            </div>
+          `;
+        }).join('');
+
+        toolsHtml = `
+          <div class="agent-tools-container">
+            <div class="agent-tools-toggle" data-taskid="${taskId}">
+              <span class="agent-tools-icon">▶</span>
+              <span>Tools (${toolsCount})</span>
+            </div>
+            <div class="agent-tools-list" id="tools-${taskId}" style="display: none;">
+              ${toolsListHtml}
+            </div>
+          </div>
+        `;
+      }
+
       item.innerHTML = `
         <div class="agent-item-header">
           <span class="agent-item-type">${typeLabel}</span>
@@ -989,8 +1058,28 @@ class App {
           <span class="agent-item-id">${shortId}</span>
           ${agent.startTime ? `<span class="agent-elapsed-time" data-start-time="${agent.startTime}">${this.formatElapsedTime(Math.floor((Date.now() - agent.startTime) / 1000))}</span>` : ''}
         </div>
-        ${agent.summary ? `<div class="agent-item-summary">${agent.summary}</div>` : ''}
+        ${toolsHtml}
+        ${agent.summary ? `<div class="agent-item-summary">${this.escapeHtml(agent.summary)}</div>` : ''}
       `;
+
+      // Add click handler for tools toggle
+      const toggle = item.querySelector('.agent-tools-toggle');
+      if (toggle) {
+        toggle.addEventListener('click', (e) => {
+          const tid = e.currentTarget.dataset.taskid;
+          const toolsList = document.getElementById(`tools-${tid}`);
+          const icon = e.currentTarget.querySelector('.agent-tools-icon');
+          if (toolsList) {
+            if (toolsList.style.display === 'none') {
+              toolsList.style.display = 'block';
+              icon.textContent = '▼';
+            } else {
+              toolsList.style.display = 'none';
+              icon.textContent = '▶';
+            }
+          }
+        });
+      }
 
       list.appendChild(item);
     }
