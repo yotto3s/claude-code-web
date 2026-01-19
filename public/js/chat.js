@@ -227,7 +227,7 @@ class ChatUI {
     const promptContainer = document.createElement('div');
     promptContainer.className = 'prompt-container';
 
-    const toolUseId = data.toolUseId;
+    const requestId = data.requestId;
     const questions = data.input?.questions || [];
     const responses = {};
 
@@ -279,7 +279,7 @@ class ChatUI {
             // Single select - submit immediately
             responses[idx] = opt.label;
             this.removePrompt();
-            onResponse(toolUseId, { answers: responses });
+            onResponse(requestId, { answers: responses });
           }
         });
 
@@ -303,7 +303,7 @@ class ChatUI {
         if (value) {
           responses[idx] = value;
           this.removePrompt();
-          onResponse(toolUseId, { answers: responses });
+          onResponse(requestId, { answers: responses });
         }
       });
 
@@ -330,7 +330,7 @@ class ChatUI {
             responses[idx] = Array.from(selectedOptions);
           }
           this.removePrompt();
-          onResponse(toolUseId, { answers: responses });
+          onResponse(requestId, { answers: responses });
         });
         promptContainer.appendChild(submitBtn);
       }
@@ -343,7 +343,7 @@ class ChatUI {
     cancelBtn.addEventListener('click', () => {
       this.removePrompt();
       // Send empty response to indicate cancellation
-      onResponse(toolUseId, { answers: {}, cancelled: true });
+      onResponse(requestId, { answers: {}, cancelled: true });
     });
     promptContainer.appendChild(cancelBtn);
 

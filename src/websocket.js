@@ -319,6 +319,7 @@ function setupSessionListeners(ws, session) {
   proc.on('prompt', (data) => {
     ws.send(JSON.stringify({
       type: 'prompt',
+      requestId: data.request_id,
       toolUseId: data.toolUseId,
       toolName: data.toolName,
       input: data.input
@@ -386,12 +387,14 @@ function handlePromptResponse(ws, msg, getCurrentSession) {
     return;
   }
 
-  if (!msg.toolUseId || !msg.response) {
-    sendError(ws, 'Tool use ID and response are required');
+  if (!msg.requestId || !msg.response) {
+    sendError(ws, 'Request ID and response are required');
     return;
   }
 
-  const success = session.process.sendToolResponse(msg.toolUseId, msg.response);
+  // Extract answers from response and pass to the pending prompt
+  const answers = msg.response.answers || {};
+  const success = session.process.sendPromptResponse(msg.requestId, answers);
 
   if (!success) {
     sendError(ws, 'Failed to send prompt response');

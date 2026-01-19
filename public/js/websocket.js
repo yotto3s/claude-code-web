@@ -157,6 +157,7 @@ class WebSocketClient {
 
       case 'prompt':
         this.emit('prompt', {
+          requestId: msg.requestId,
           toolUseId: msg.toolUseId,
           toolName: msg.toolName,
           input: msg.input
@@ -215,8 +216,8 @@ class WebSocketClient {
     return this.send('cancel');
   }
 
-  sendPromptResponse(toolUseId, response) {
-    return this.send('prompt_response', { toolUseId, response });
+  sendPromptResponse(requestId, response) {
+    return this.send('prompt_response', { requestId, response });
   }
 
   sendPermissionResponse(requestId, decision, toolInput) {

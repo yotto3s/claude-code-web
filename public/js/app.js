@@ -356,8 +356,8 @@ class App {
     this.currentTool = null;
 
     // Show the prompt UI
-    this.chatUI.showPrompt(data, (toolUseId, response) => {
-      this.ws.sendPromptResponse(toolUseId, response);
+    this.chatUI.showPrompt(data, (requestId, response) => {
+      this.ws.sendPromptResponse(requestId, response);
     });
   }
 

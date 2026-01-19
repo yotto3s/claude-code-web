@@ -11,6 +11,7 @@ class ClaudeProcess extends EventEmitter {
     this.messageResolver = null;
     this.sessionId = null;
     this.pendingPermissions = new Map(); // requestId -> {resolve, reject}
+    this.pendingPrompts = new Map(); // requestId -> {resolve} for AskUserQuestion
     this.isProcessing = false;
   }
 
@@ -25,6 +26,11 @@ class ClaudeProcess extends EventEmitter {
         cwd: this.workingDirectory,
         permissionMode: 'default',
         canUseTool: async (toolName, input, options) => {
+          // Handle AskUserQuestion specially - return user answers via updatedInput
+          if (toolName === 'AskUserQuestion') {
+            return this.handleAskUserQuestion(toolName, input, options);
+          }
+          // Handle other tools that need permission
           return this.handlePermissionRequest(toolName, input, options);
         }
       }
@@ -88,14 +94,7 @@ class ClaudeProcess extends EventEmitter {
             if (block.type === 'text') {
               this.emit('chunk', { index: 0, text: block.text });
             } else if (block.type === 'tool_use') {
-              // Handle AskUserQuestion tool
-              if (block.name === 'AskUserQuestion') {
-                this.emit('prompt', {
-                  toolUseId: block.id,
-                  toolName: block.name,
-                  input: block.input
-                });
-              }
+              // AskUserQuestion is handled in canUseTool callback, not here
               this.emit('tool_use', {
                 id: block.id,
                 name: block.name,
@@ -144,6 +143,50 @@ class ClaudeProcess extends EventEmitter {
         reject
       });
     });
+  }
+
+  async handleAskUserQuestion(toolName, input, options) {
+    // Generate unique request ID for the prompt
+    const requestId = `prompt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Emit prompt event to frontend with the questions
+    this.emit('prompt', {
+      request_id: requestId,
+      toolUseId: options?.toolUseID,
+      toolName: toolName,
+      input: input
+    });
+
+    // Wait for user response (with 120s timeout for questions - longer than permission requests)
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        this.pendingPrompts.delete(requestId);
+        resolve({ behavior: 'deny', message: 'Question timed out' });
+      }, 120000);
+
+      this.pendingPrompts.set(requestId, {
+        resolve: (answers) => {
+          clearTimeout(timeout);
+          this.pendingPrompts.delete(requestId);
+          // Return allow with the answers populated in input
+          resolve({
+            behavior: 'allow',
+            updatedInput: { ...input, answers }
+          });
+        }
+      });
+    });
+  }
+
+  sendPromptResponse(requestId, answers) {
+    const pending = this.pendingPrompts.get(requestId);
+    if (!pending) {
+      console.log('sendPromptResponse: No pending prompt for requestId:', requestId);
+      return false;
+    }
+
+    pending.resolve(answers);
+    return true;
   }
 
   sendMessage(content) {
