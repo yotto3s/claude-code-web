@@ -9,7 +9,7 @@
  * - Foreign key constraints for data integrity
  *
  * Schema:
- * - sessions: id, name, working_directory, mode, sdk_session_id, created_at, last_activity, is_active
+ * - sessions: id, name, working_directory, mode, sdk_session_id, web_search_enabled, created_at, last_activity, is_active
  * - messages: id, session_id, role, content, timestamp
  * - allowed_tools: id, session_id, tool_name, allowed_at (for persisting "Allow All" decisions)
  *
@@ -43,13 +43,16 @@ class SessionDatabase {
     this.migrateSchema();
 
     // Checkpoint WAL periodically (every 5 minutes) to ensure data is written to main DB
-    this.checkpointInterval = setInterval(() => {
-      try {
-        this.db.pragma('wal_checkpoint(PASSIVE)');
-      } catch (err) {
-        console.error('Error during WAL checkpoint:', err.message);
-      }
-    }, 5 * 60 * 1000);
+    this.checkpointInterval = setInterval(
+      () => {
+        try {
+          this.db.pragma('wal_checkpoint(PASSIVE)');
+        } catch (err) {
+          console.error('Error during WAL checkpoint:', err.message);
+        }
+      },
+      5 * 60 * 1000
+    );
   }
 
   initSchema() {
@@ -60,6 +63,7 @@ class SessionDatabase {
         working_directory TEXT NOT NULL,
         mode TEXT DEFAULT 'default',
         sdk_session_id TEXT,
+        web_search_enabled INTEGER DEFAULT 0,
         created_at INTEGER NOT NULL,
         last_activity INTEGER NOT NULL,
         is_active INTEGER DEFAULT 1
@@ -98,11 +102,18 @@ class SessionDatabase {
   migrateSchema() {
     // Check if sdk_session_id column exists
     const tableInfo = this.db.prepare('PRAGMA table_info(sessions)').all();
-    const hasSdkSessionId = tableInfo.some(col => col.name === 'sdk_session_id');
+    const hasSdkSessionId = tableInfo.some((col) => col.name === 'sdk_session_id');
 
     if (!hasSdkSessionId) {
       console.log('[Database] Migrating: adding sdk_session_id column to sessions table');
       this.db.exec('ALTER TABLE sessions ADD COLUMN sdk_session_id TEXT');
+    }
+
+    // Check if web_search_enabled column exists
+    const hasWebSearchEnabled = tableInfo.some((col) => col.name === 'web_search_enabled');
+    if (!hasWebSearchEnabled) {
+      console.log('[Database] Migrating: adding web_search_enabled column to sessions table');
+      this.db.exec('ALTER TABLE sessions ADD COLUMN web_search_enabled INTEGER DEFAULT 0');
     }
   }
 
@@ -151,6 +162,20 @@ class SessionDatabase {
     console.log(`[Database] SDK session ID updated for session ${sessionId}: ${sdkSessionId}`);
   }
 
+  /**
+   * Update web search enabled setting for a session.
+   *
+   * @param {string} sessionId - Session ID
+   * @param {boolean} enabled - Whether web search is enabled
+   */
+  updateWebSearchEnabled(sessionId, enabled) {
+    const stmt = this.db.prepare('UPDATE sessions SET web_search_enabled = ? WHERE id = ?');
+    stmt.run(enabled ? 1 : 0, sessionId);
+    console.log(
+      `[Database] Web search ${enabled ? 'enabled' : 'disabled'} for session ${sessionId}`
+    );
+  }
+
   deactivateSession(sessionId) {
     const stmt = this.db.prepare('UPDATE sessions SET is_active = 0 WHERE id = ?');
     stmt.run(sessionId);
@@ -167,7 +192,9 @@ class SessionDatabase {
   }
 
   getActiveSessions() {
-    const stmt = this.db.prepare('SELECT * FROM sessions WHERE is_active = 1 ORDER BY last_activity DESC');
+    const stmt = this.db.prepare(
+      'SELECT * FROM sessions WHERE is_active = 1 ORDER BY last_activity DESC'
+    );
     return stmt.all();
   }
 
@@ -186,7 +213,9 @@ class SessionDatabase {
   }
 
   getMessages(sessionId) {
-    const stmt = this.db.prepare('SELECT role, content, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp ASC');
+    const stmt = this.db.prepare(
+      'SELECT role, content, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp ASC'
+    );
     return stmt.all(sessionId);
   }
 
@@ -207,16 +236,20 @@ class SessionDatabase {
 
   getAllowedTools(sessionId) {
     const stmt = this.db.prepare('SELECT tool_name FROM allowed_tools WHERE session_id = ?');
-    return stmt.all(sessionId).map(row => row.tool_name);
+    return stmt.all(sessionId).map((row) => row.tool_name);
   }
 
   isToolAllowed(sessionId, toolName) {
-    const stmt = this.db.prepare('SELECT 1 FROM allowed_tools WHERE session_id = ? AND tool_name = ?');
+    const stmt = this.db.prepare(
+      'SELECT 1 FROM allowed_tools WHERE session_id = ? AND tool_name = ?'
+    );
     return stmt.get(sessionId, toolName) !== undefined;
   }
 
   removeAllowedTool(sessionId, toolName) {
-    const stmt = this.db.prepare('DELETE FROM allowed_tools WHERE session_id = ? AND tool_name = ?');
+    const stmt = this.db.prepare(
+      'DELETE FROM allowed_tools WHERE session_id = ? AND tool_name = ?'
+    );
     stmt.run(sessionId, toolName);
   }
 
@@ -228,7 +261,9 @@ class SessionDatabase {
   // Cleanup operations
   cleanupExpiredSessions(maxAge) {
     const cutoff = Date.now() - maxAge;
-    const stmt = this.db.prepare('UPDATE sessions SET is_active = 0 WHERE last_activity < ? AND is_active = 1');
+    const stmt = this.db.prepare(
+      'UPDATE sessions SET is_active = 0 WHERE last_activity < ? AND is_active = 1'
+    );
     return stmt.run(cutoff);
   }
 

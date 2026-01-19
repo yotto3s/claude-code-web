@@ -9,13 +9,13 @@ class HostServerManager {
     // Host server configuration
     this.hostIP = process.env.HOST_SERVER_IP || 'host.docker.internal';
     this.hostPort = parseInt(process.env.HOST_SERVER_PORT || '3001', 10);
-    
+
     // For older Docker versions that don't support host.docker.internal
     // You can set HOST_SERVER_IP to the Docker bridge IP (usually 172.17.0.1)
     if (this.hostIP === 'auto') {
       this.hostIP = this.detectHostIP();
     }
-    
+
     console.log(`Host Server Manager configured: ${this.hostIP}:${this.hostPort}`);
   }
 
@@ -27,12 +27,12 @@ class HostServerManager {
     // On Mac/Windows with Docker Desktop, use host.docker.internal
     const os = require('os');
     const interfaces = os.networkInterfaces();
-    
+
     // Try to find docker0 interface
     if (interfaces.docker0 && interfaces.docker0.length > 0) {
       return '172.17.0.1';
     }
-    
+
     // Default to host.docker.internal (works on Docker Desktop)
     return 'host.docker.internal';
   }
@@ -43,13 +43,13 @@ class HostServerManager {
   async isServerRunning() {
     return new Promise((resolve) => {
       const http = require('http');
-      
+
       const options = {
         hostname: this.hostIP,
         port: this.hostPort,
         path: '/api/health',
         method: 'GET',
-        timeout: 2000
+        timeout: 2000,
       };
 
       const req = http.request(options, (res) => {
@@ -76,7 +76,7 @@ class HostServerManager {
   async getTarget(username) {
     return {
       ip: this.hostIP,
-      port: this.hostPort
+      port: this.hostPort,
     };
   }
 
@@ -87,16 +87,18 @@ class HostServerManager {
    */
   async startSession(userInfo) {
     const { username } = userInfo;
-    
+
     console.log(`Checking host server for user ${username}...`);
-    
+
     // Check if server is accessible
     const isRunning = await this.isServerRunning();
-    
+
     if (!isRunning) {
       return {
         success: false,
-        error: 'Host server is not running or not accessible. Make sure the server is running on the host at port ' + this.hostPort
+        error:
+          'Host server is not running or not accessible. Make sure the server is running on the host at port ' +
+          this.hostPort,
       };
     }
 
@@ -104,7 +106,7 @@ class HostServerManager {
     return {
       success: true,
       ip: this.hostIP,
-      port: this.hostPort
+      port: this.hostPort,
     };
   }
 
@@ -130,5 +132,5 @@ const hostServerManager = new HostServerManager();
 
 module.exports = {
   HostServerManager,
-  hostServerManager
+  hostServerManager,
 };

@@ -64,7 +64,8 @@ class SessionManager {
           mode: dbSession.mode || 'default',
           allowedTools, // Tools approved via "Allow All"
           sdkSessionId: dbSession.sdk_session_id || null, // SDK session ID for resume
-          persisted: true // Flag indicating this was loaded from DB
+          webSearchEnabled: Boolean(dbSession.web_search_enabled), // Web search toggle
+          persisted: true, // Flag indicating this was loaded from DB
         });
       }
     } catch (err) {
@@ -99,7 +100,7 @@ class SessionManager {
 
   createSession(workingDirectory, name = null) {
     // Check if we've hit the session limit (only count sessions with active processes)
-    const activeSessions = Array.from(this.sessions.values()).filter(s => s.process !== null);
+    const activeSessions = Array.from(this.sessions.values()).filter((s) => s.process !== null);
 
     if (activeSessions.length >= MAX_SESSIONS) {
       // Find and terminate the oldest inactive session
@@ -136,7 +137,8 @@ class SessionManager {
       workingDirectory,
       mode: 'default',
       allowedTools: new Set(), // Tools approved via "Allow All"
-      sdkSessionId: null // Will be set when SDK initializes
+      sdkSessionId: null, // Will be set when SDK initializes
+      webSearchEnabled: false, // Web search toggle (default off)
     };
 
     // Listen for SDK session ID so we can persist it for future resume
@@ -190,7 +192,9 @@ class SessionManager {
           session.sdkSessionId = newSdkSessionId;
           try {
             sessionDatabase.updateSdkSessionId(id, newSdkSessionId);
-            console.log(`[SessionManager] SDK session ID updated for recovered session ${id}: ${newSdkSessionId}`);
+            console.log(
+              `[SessionManager] SDK session ID updated for recovered session ${id}: ${newSdkSessionId}`
+            );
           } catch (err) {
             console.error('Error updating SDK session ID:', err.message);
           }
@@ -269,7 +273,7 @@ class SessionManager {
       const timestamp = Date.now();
       const historyEntry = {
         ...entry,
-        timestamp
+        timestamp,
       };
 
       session.history.push(historyEntry);
@@ -322,6 +326,28 @@ class SessionManager {
       console.error('Error updating session mode in database:', err.message);
     }
 
+    return true;
+  }
+
+  setWebSearchEnabled(id, enabled) {
+    const session = this.sessions.get(id);
+    if (!session) return false;
+
+    session.webSearchEnabled = Boolean(enabled);
+
+    // Update process if running
+    if (session.process && typeof session.process.setWebSearchEnabled === 'function') {
+      session.process.setWebSearchEnabled(enabled);
+    }
+
+    // Persist to database
+    try {
+      sessionDatabase.updateWebSearchEnabled(id, enabled);
+    } catch (err) {
+      console.error('Error updating web search setting in database:', err.message);
+    }
+
+    console.log(`Web search ${enabled ? 'enabled' : 'disabled'} for session ${id}`);
     return true;
   }
 
@@ -468,7 +494,7 @@ class SessionManager {
         isProcessing: session.process?.isProcessing || false,
         workingDirectory: session.workingDirectory,
         agents: session.process?.getActiveAgents() || [],
-        hasActiveProcess: session.process !== null
+        hasActiveProcess: session.process !== null,
       });
     }
 

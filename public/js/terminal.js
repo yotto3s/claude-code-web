@@ -67,10 +67,10 @@ class TerminalManager {
         brightBlue: '#93c5fd',
         brightMagenta: '#f0abfc',
         brightCyan: '#67e8f9',
-        brightWhite: '#f9fafb'
+        brightWhite: '#f9fafb',
       },
       allowTransparency: true,
-      scrollback: 10000
+      scrollback: 10000,
     });
 
     // Create fit addon for responsive sizing
@@ -85,18 +85,18 @@ class TerminalManager {
       isConnected: false,
       resizeTimeout: null,
       cwd: cwd,
-      name: `Terminal ${this.terminalCounter}`
+      name: `Terminal ${this.terminalCounter}`,
     };
 
     this.terminals.set(terminalId, terminalData);
 
     // Handle terminal input
-    terminal.onData(data => {
+    terminal.onData((data) => {
       if (terminalData.isConnected && this.sendCallback) {
         this.sendCallback({
           type: 'terminal_input',
           terminalId: terminalId,
-          data: data
+          data: data,
         });
       }
     });
@@ -110,7 +110,7 @@ class TerminalManager {
             type: 'terminal_resize',
             terminalId: terminalId,
             cols: cols,
-            rows: rows
+            rows: rows,
           });
         }, 100);
       }
@@ -120,7 +120,7 @@ class TerminalManager {
     this.sendCallback({
       type: 'terminal_create',
       terminalId: terminalId,
-      cwd: cwd
+      cwd: cwd,
     });
 
     // Render tabs
@@ -145,7 +145,8 @@ class TerminalManager {
 
       const closeBtn = document.createElement('button');
       closeBtn.className = 'terminal-tab-close';
-      closeBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+      closeBtn.innerHTML =
+        '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
       closeBtn.onclick = (e) => {
         e.stopPropagation();
         this.destroyTerminal(id);
@@ -187,10 +188,10 @@ class TerminalManager {
 
     this.activeTerminalId = terminalId;
     terminalData.terminal.focus();
-    
+
     // Update tab active state
     this.renderTabs();
-    
+
     console.log('Switched to terminal:', terminalId);
   }
 
@@ -210,10 +211,10 @@ class TerminalManager {
 
     terminalData.isConnected = true;
     console.log('Terminal created:', terminalId);
-    
+
     // Write welcome message
     terminalData.terminal.writeln('\x1b[1;32m● Terminal connected\x1b[0m');
-    
+
     // Switch to this terminal
     this.switchToTerminal(terminalId);
   }
@@ -224,7 +225,7 @@ class TerminalManager {
 
     terminalData.isConnected = false;
     console.log('Terminal exited:', { terminalId, exitCode, signal });
-    
+
     // Automatically close the terminal tab when process exits
     this.destroyTerminal(terminalId);
   }
@@ -272,7 +273,7 @@ class TerminalManager {
     if (this.sendCallback) {
       this.sendCallback({
         type: 'terminal_close',
-        terminalId: terminalId
+        terminalId: terminalId,
       });
     }
   }
@@ -321,7 +322,7 @@ class TerminalManager {
         clearTimeout(terminalData.resizeTimeout);
       }
     }
-    
+
     this.terminals.clear();
     this.activeTerminalId = null;
     this.sendCallback = null;

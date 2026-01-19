@@ -51,12 +51,12 @@ class TerminalSession extends EventEmitter {
     }
 
     const shell = os.platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash';
-    
+
     const env = Object.assign({}, process.env, {
       COLORTERM: 'truecolor',
       TERM: 'xterm-256color',
       BASH_ENV: '/etc/bash.bashrc',
-      STARSHIP_CACHE: '/tmp/starship'
+      STARSHIP_CACHE: '/tmp/starship',
     });
 
     // Use login shell to ensure profile is sourced
@@ -67,7 +67,7 @@ class TerminalSession extends EventEmitter {
       cols: 80,
       rows: 24,
       cwd: this.cwd,
-      env: env
+      env: env,
     });
 
     this.ptyProcess.onData((data) => {
@@ -146,7 +146,7 @@ class TerminalManager {
   createTerminal(sessionId, cwd, username) {
     const terminal = new TerminalSession(sessionId, cwd, username);
     this.terminals.set(sessionId, terminal);
-    
+
     terminal.on('cleanup', () => {
       this.terminals.delete(sessionId);
     });
@@ -187,12 +187,12 @@ class TerminalManager {
   }
 
   listSessions() {
-    return Array.from(this.terminals.values()).map(terminal => ({
+    return Array.from(this.terminals.values()).map((terminal) => ({
       sessionId: terminal.sessionId,
       cwd: terminal.cwd,
       username: terminal.username,
       isActive: terminal.isActive,
-      lastActivity: terminal.lastActivity
+      lastActivity: terminal.lastActivity,
     }));
   }
 

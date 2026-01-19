@@ -35,7 +35,7 @@ const { terminalManager } = require('./terminal-manager');
 function parseCookies(cookieHeader) {
   const cookies = {};
   if (!cookieHeader) return cookies;
-  cookieHeader.split(';').forEach(cookie => {
+  cookieHeader.split(';').forEach((cookie) => {
     const [name, ...rest] = cookie.trim().split('=');
     if (name) cookies[name] = decodeURIComponent(rest.join('='));
   });
@@ -79,7 +79,7 @@ function setupWebSocket(server) {
 
   const wss = new WebSocket.Server({
     server,
-    path: '/ws'
+    path: '/ws',
   });
 
   wss.on('connection', async (ws, req) => {
@@ -128,9 +128,11 @@ function setupWebSocket(server) {
     }
 
     // Send initial connection confirmation
-    ws.send(JSON.stringify({
-      type: 'connected'
-    }));
+    ws.send(
+      JSON.stringify({
+        type: 'connected',
+      })
+    );
   });
 
   return wss;
@@ -200,6 +202,10 @@ async function handleMessage(ws, msg, ctx) {
       handleSetMode(ws, msg, getCurrentSession);
       break;
 
+    case 'set_web_search':
+      handleSetWebSearch(ws, msg, getCurrentSession);
+      break;
+
     case 'exit_plan_mode_response':
       handleExitPlanModeResponse(ws, msg, getCurrentSession);
       break;
@@ -246,8 +252,8 @@ function handleCreateSession(ws, msg, setSession) {
         id: session.id,
         name: session.name,
         createdAt: session.createdAt,
-        workingDirectory: session.workingDirectory
-      }
+        workingDirectory: session.workingDirectory,
+      },
     });
   } catch (err) {
     sendError(ws, err.message);
@@ -284,9 +290,10 @@ function handleJoinSession(ws, msg, setSession) {
       createdAt: session.createdAt,
       workingDirectory: session.workingDirectory,
       mode: session.mode || 'default',
-      recovered: session.persisted || false // Let client know this was recovered
+      webSearchEnabled: session.webSearchEnabled || false,
+      recovered: session.persisted || false, // Let client know this was recovered
     },
-    history: session.history
+    history: session.history,
   });
 }
 
@@ -310,7 +317,7 @@ function handleRenameSession(ws, msg, getCurrentSession) {
     safeSend(ws, {
       type: 'session_renamed',
       sessionId: session.id,
-      name: newName
+      name: newName,
     });
   } else {
     sendError(ws, 'Failed to rename session');
@@ -329,7 +336,10 @@ function handleDeleteSession(ws, msg, getCurrentSession, setSession) {
   // If trying to delete current session, must use createNew flag to reset it
   if (isCurrentSession) {
     if (!msg.createNew) {
-      sendError(ws, 'Cannot delete the currently active session. Use reset to delete and create a new session.');
+      sendError(
+        ws,
+        'Cannot delete the currently active session. Use reset to delete and create a new session.'
+      );
       return;
     }
 
@@ -356,8 +366,8 @@ function handleDeleteSession(ws, msg, getCurrentSession, setSession) {
         id: newSession.id,
         name: newSession.name,
         createdAt: newSession.createdAt,
-        workingDirectory: newSession.workingDirectory
-      }
+        workingDirectory: newSession.workingDirectory,
+      },
     });
     return;
   }
@@ -368,7 +378,7 @@ function handleDeleteSession(ws, msg, getCurrentSession, setSession) {
   if (success) {
     safeSend(ws, {
       type: 'session_deleted',
-      sessionId: msg.sessionId
+      sessionId: msg.sessionId,
     });
   } else {
     sendError(ws, 'Failed to delete session');
@@ -380,6 +390,23 @@ function setupSessionListeners(ws, session) {
 
   // Remove any existing listeners to prevent duplicates
   proc.removeAllListeners();
+
+  // Re-attach the sdk_session_id listener (was removed by removeAllListeners above)
+  // This is critical for persisting the SDK session ID for future context resume
+  proc.once('sdk_session_id', (sdkSessionId) => {
+    if (sdkSessionId && sdkSessionId !== session.sdkSessionId) {
+      session.sdkSessionId = sdkSessionId;
+      try {
+        const { sessionDatabase } = require('./database');
+        sessionDatabase.updateSdkSessionId(session.id, sdkSessionId);
+        console.log(
+          `[WebSocket] SDK session ID captured for session ${session.id}: ${sdkSessionId}`
+        );
+      } catch (err) {
+        console.error('Error persisting SDK session ID:', err.message);
+      }
+    }
+  });
 
   // Buffer to accumulate assistant message text for history persistence
   let currentMessageBuffer = '';
@@ -393,7 +420,7 @@ function setupSessionListeners(ws, session) {
     safeSend(ws, {
       type: 'chunk',
       text: data.text,
-      index: data.index
+      index: data.index,
     });
   });
 
@@ -401,14 +428,14 @@ function setupSessionListeners(ws, session) {
     safeSend(ws, {
       type: 'content_start',
       contentBlock: data.contentBlock,
-      index: data.index
+      index: data.index,
     });
   });
 
   proc.on('content_stop', (data) => {
     safeSend(ws, {
       type: 'content_stop',
-      index: data.index
+      index: data.index,
     });
   });
 
@@ -416,14 +443,14 @@ function setupSessionListeners(ws, session) {
     safeSend(ws, {
       type: 'tool_input_delta',
       json: data.json,
-      index: data.index
+      index: data.index,
     });
   });
 
   proc.on('message_start', (data) => {
     safeSend(ws, {
       type: 'message_start',
-      message: data
+      message: data,
     });
   });
 
@@ -431,14 +458,14 @@ function setupSessionListeners(ws, session) {
     safeSend(ws, {
       type: 'message_delta',
       stopReason: data.stopReason,
-      usage: data.usage
+      usage: data.usage,
     });
   });
 
   proc.on('complete', (data) => {
     safeSend(ws, {
       type: 'complete',
-      messageId: data.messageId
+      messageId: data.messageId,
     });
   });
 
@@ -447,7 +474,7 @@ function setupSessionListeners(ws, session) {
     if (currentMessageBuffer) {
       sessionManager.addToHistory(session.id, {
         role: 'assistant',
-        content: currentMessageBuffer
+        content: currentMessageBuffer,
       });
     }
 
@@ -456,7 +483,7 @@ function setupSessionListeners(ws, session) {
 
     safeSend(ws, {
       type: 'result',
-      data
+      data,
     });
   });
 
@@ -467,7 +494,7 @@ function setupSessionListeners(ws, session) {
     safeSend(ws, {
       type: 'error',
       message: data.message,
-      code: data.code
+      code: data.code,
     });
   });
 
@@ -476,7 +503,7 @@ function setupSessionListeners(ws, session) {
     currentMessageBuffer = '';
 
     safeSend(ws, {
-      type: 'cancelled'
+      type: 'cancelled',
     });
   });
 
@@ -484,21 +511,21 @@ function setupSessionListeners(ws, session) {
     // Plain text output (non-JSON)
     safeSend(ws, {
       type: 'text',
-      content: text
+      content: text,
     });
   });
 
   proc.on('system', (data) => {
     safeSend(ws, {
       type: 'system',
-      data
+      data,
     });
   });
 
   proc.on('close', (code) => {
     safeSend(ws, {
       type: 'process_closed',
-      code
+      code,
     });
 
     // Only restart and re-attach listeners if WebSocket is still connected
@@ -520,7 +547,7 @@ function setupSessionListeners(ws, session) {
     console.error('[Claude stderr]', text);
     safeSend(ws, {
       type: 'stderr',
-      text
+      text,
     });
   });
 
@@ -530,7 +557,7 @@ function setupSessionListeners(ws, session) {
       requestId: data.request_id,
       toolUseId: data.toolUseId,
       toolName: data.toolName,
-      input: data.input
+      input: data.input,
     });
   });
 
@@ -540,7 +567,7 @@ function setupSessionListeners(ws, session) {
       requestId: data.request_id,
       toolName: data.request?.tool_name,
       toolInput: data.request?.input,
-      toolUseId: data.request?.tool_use_id
+      toolUseId: data.request?.tool_use_id,
     });
   });
 
@@ -550,7 +577,7 @@ function setupSessionListeners(ws, session) {
       id: data.id,
       name: data.name,
       input: data.input,
-      agentId: data.agentId || null
+      agentId: data.agentId || null,
     });
   });
 
@@ -560,7 +587,7 @@ function setupSessionListeners(ws, session) {
       taskId: data.taskId,
       description: data.description,
       agentType: data.agentType,
-      startTime: data.startTime
+      startTime: data.startTime,
     });
   });
 
@@ -572,7 +599,7 @@ function setupSessionListeners(ws, session) {
       summary: data.summary,
       outputFile: data.outputFile,
       description: data.description,
-      agentType: data.agentType
+      agentType: data.agentType,
     });
   });
 
@@ -581,7 +608,7 @@ function setupSessionListeners(ws, session) {
       type: 'exit_plan_mode_request',
       requestId: data.request_id,
       toolUseId: data.toolUseId,
-      input: data.input
+      input: data.input,
     });
   });
 }
@@ -602,7 +629,7 @@ function handleUserMessage(ws, msg, getCurrentSession) {
   // Add to history
   sessionManager.addToHistory(session.id, {
     role: 'user',
-    content: msg.content
+    content: msg.content,
   });
 
   // Send to Claude
@@ -612,7 +639,7 @@ function handleUserMessage(ws, msg, getCurrentSession) {
     sendError(ws, 'Failed to send message to Claude');
   } else {
     safeSend(ws, {
-      type: 'message_sent'
+      type: 'message_sent',
     });
   }
 }
@@ -670,7 +697,7 @@ function handlePermissionResponse(ws, msg, getCurrentSession) {
   const result = session.process.sendControlResponse(
     msg.requestId,
     msg.decision,
-    msg.toolInput || null  // Only pass if we have actual modifications
+    msg.toolInput || null // Only pass if we have actual modifications
   );
 
   console.log('sendControlResponse returned:', result);
@@ -690,7 +717,7 @@ function handleListSessions(ws) {
   const sessions = sessionManager.listSessions();
   safeSend(ws, {
     type: 'sessions_list',
-    sessions
+    sessions,
   });
 }
 
@@ -700,7 +727,7 @@ function handleListAgents(ws, msg, getCurrentSession) {
   if (!session) {
     safeSend(ws, {
       type: 'agents_list',
-      agents: []
+      agents: [],
     });
     return;
   }
@@ -708,7 +735,7 @@ function handleListAgents(ws, msg, getCurrentSession) {
   const agents = sessionManager.listAgents(session.id);
   safeSend(ws, {
     type: 'agents_list',
-    agents
+    agents,
   });
 }
 
@@ -738,7 +765,32 @@ function handleSetMode(ws, msg, getCurrentSession) {
   // Send confirmation
   safeSend(ws, {
     type: 'mode_changed',
-    mode: msg.mode
+    mode: msg.mode,
+  });
+}
+
+function handleSetWebSearch(ws, msg, getCurrentSession) {
+  const session = getCurrentSession();
+
+  if (!session) {
+    sendError(ws, 'No active session');
+    return;
+  }
+
+  const enabled = Boolean(msg.enabled);
+
+  // Store on session and persist to database
+  sessionManager.setWebSearchEnabled(session.id, enabled);
+
+  // Set on claude process
+  if (session.process && typeof session.process.setWebSearchEnabled === 'function') {
+    session.process.setWebSearchEnabled(enabled);
+  }
+
+  // Send confirmation
+  safeSend(ws, {
+    type: 'web_search_changed',
+    enabled: enabled,
   });
 }
 
@@ -775,7 +827,7 @@ function handleExitPlanModeResponse(ws, msg, getCurrentSession) {
     // Send mode changed confirmation
     safeSend(ws, {
       type: 'mode_changed',
-      mode: 'acceptEdits'
+      mode: 'acceptEdits',
     });
   }
 }
@@ -783,7 +835,7 @@ function handleExitPlanModeResponse(ws, msg, getCurrentSession) {
 function sendError(ws, message) {
   safeSend(ws, {
     type: 'error',
-    message
+    message,
   });
 }
 
@@ -809,7 +861,7 @@ function handleTerminalCreate(ws, msg, getCurrentSession) {
       safeSend(ws, {
         type: 'terminal_data',
         terminalId: terminalId,
-        data: data
+        data: data,
       });
     });
 
@@ -818,7 +870,7 @@ function handleTerminalCreate(ws, msg, getCurrentSession) {
         type: 'terminal_exit',
         terminalId: terminalId,
         exitCode,
-        signal
+        signal,
       });
     });
 
@@ -828,7 +880,7 @@ function handleTerminalCreate(ws, msg, getCurrentSession) {
   safeSend(ws, {
     type: 'terminal_created',
     terminalId: terminalId,
-    cwd: terminal.cwd
+    cwd: terminal.cwd,
   });
 }
 
@@ -881,7 +933,7 @@ function handleTerminalClose(ws, msg) {
   safeSend(ws, {
     type: 'terminal_closed',
     terminalId: terminalId,
-    success
+    success,
   });
 }
 

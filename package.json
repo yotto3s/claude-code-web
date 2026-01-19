@@ -5,7 +5,11 @@
   "main": "gateway.js",
   "scripts": {
     "start": "node gateway.js",
-    "dev": "node --watch gateway.js"
+    "dev": "node --watch gateway.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"src/**/*.js\" \"public/**/*.{js,css,html}\" \"*.js\" \"*.json\" \"*.md\"",
+    "format:check": "prettier --check \"src/**/*.js\" \"public/**/*.{js,css,html}\" \"*.js\" \"*.json\" \"*.md\""
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.12",
@@ -19,5 +23,11 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.0.0",
+    "prettier": "^3.8.0"
   }
 }

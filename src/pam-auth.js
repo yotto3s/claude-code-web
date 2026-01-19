@@ -17,7 +17,7 @@ function parsePasswd() {
     const content = fs.readFileSync('/etc/passwd', 'utf8');
     const users = {};
 
-    content.split('\n').forEach(line => {
+    content.split('\n').forEach((line) => {
       if (!line.trim()) return;
       const parts = line.split(':');
       if (parts.length >= 7) {
@@ -28,7 +28,7 @@ function parsePasswd() {
           gid: parseInt(gid, 10),
           gecos,
           home,
-          shell
+          shell,
         };
       }
     });
@@ -48,7 +48,7 @@ function parseShadow() {
     const content = fs.readFileSync('/etc/shadow', 'utf8');
     const hashes = {};
 
-    content.split('\n').forEach(line => {
+    content.split('\n').forEach((line) => {
       if (!line.trim()) return;
       const parts = line.split(':');
       if (parts.length >= 2) {
@@ -90,7 +90,7 @@ print('match' if generated == stored_hash else 'nomatch')
       {
         encoding: 'utf8',
         timeout: 5000,
-        input: password
+        input: password,
       }
     ).trim();
 
@@ -137,7 +137,7 @@ async function authenticate(username, password) {
     username: userInfo.username,
     uid: userInfo.uid,
     gid: userInfo.gid,
-    home: userInfo.home
+    home: userInfo.home,
   };
 }
 
@@ -151,5 +151,5 @@ function getUserInfo(username) {
 
 module.exports = {
   authenticate,
-  getUserInfo
+  getUserInfo,
 };

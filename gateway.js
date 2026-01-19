@@ -33,7 +33,7 @@ const server = http.createServer(app);
 // Create proxy server
 const proxy = httpProxy.createProxyServer({
   ws: true,
-  changeOrigin: true
+  changeOrigin: true,
 });
 
 // Configuration
@@ -103,7 +103,7 @@ function createSessionToken(username, userInfo) {
     uid: userInfo.uid,
     gid: userInfo.gid,
     home: userInfo.home,
-    exp: Date.now() + 24 * 60 * 60 * 1000  // 24 hours
+    exp: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
   });
   const signature = crypto.createHmac('sha256', SESSION_SECRET).update(data).digest('hex');
   return Buffer.from(data).toString('base64') + '.' + signature;
@@ -122,13 +122,14 @@ function verifySessionToken(token) {
   token = decodeURIComponent(token);
   const [data, signature] = token.split('.');
   if (!data || !signature) return null;
-  
-  const expected = crypto.createHmac('sha256', SESSION_SECRET)
+
+  const expected = crypto
+    .createHmac('sha256', SESSION_SECRET)
     .update(Buffer.from(data, 'base64').toString())
     .digest('hex');
-  
+
   if (signature !== expected) return null;
-  
+
   try {
     const parsed = JSON.parse(Buffer.from(data, 'base64').toString());
     if (parsed.exp < Date.now()) return null;
@@ -178,7 +179,9 @@ app.post('/api/login', async (req, res) => {
     return res.status(401).json({ error: authResult.error || 'Invalid credentials' });
   }
 
-  console.log(`Authentication successful for ${username} (UID: ${authResult.uid}, GID: ${authResult.gid})`);
+  console.log(
+    `Authentication successful for ${username} (UID: ${authResult.uid}, GID: ${authResult.gid})`
+  );
 
   // Check if host server is accessible
   console.log(`Checking host server accessibility...`);
@@ -186,7 +189,7 @@ app.post('/api/login', async (req, res) => {
     username: authResult.username,
     uid: authResult.uid,
     gid: authResult.gid,
-    home: authResult.home
+    home: authResult.home,
   });
 
   if (!sessionResult.success) {
@@ -198,31 +201,33 @@ app.post('/api/login', async (req, res) => {
   const userInfo = {
     uid: authResult.uid,
     gid: authResult.gid,
-    home: authResult.home
+    home: authResult.home,
   };
 
   const token = createSessionToken(username, userInfo);
 
   userSessions.set(username, {
     token,
-    userInfo
+    userInfo,
   });
 
   res.cookie('session', token, {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
-    maxAge: 24 * 60 * 60 * 1000
+    maxAge: 24 * 60 * 60 * 1000,
   });
 
-  console.log(`User ${username} logged in, proxying to host server at ${sessionResult.ip}:${sessionResult.port}`);
+  console.log(
+    `User ${username} logged in, proxying to host server at ${sessionResult.ip}:${sessionResult.port}`
+  );
   res.json({ success: true, username });
 });
 
 // Logout
 app.post('/api/logout', async (req, res) => {
   const sessionData = verifySessionToken(req.cookies.session);
-  
+
   if (sessionData) {
     console.log(`User ${sessionData.username} logging out`);
     userSessions.delete(sessionData.username);
@@ -235,7 +240,7 @@ app.post('/api/logout', async (req, res) => {
 // Server status endpoint
 app.get('/api/server/status', async (req, res) => {
   const sessionData = verifySessionToken(req.cookies.session);
-  
+
   if (!sessionData) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
@@ -248,7 +253,7 @@ app.get('/api/server/status', async (req, res) => {
     running: isRunning,
     ip: target.ip,
     port: target.port,
-    mode: 'host'
+    mode: 'host',
   });
 });
 
@@ -260,17 +265,17 @@ async function getProxyTarget(sessionData) {
 // Auth middleware for proxied routes
 async function proxyAuth(req, res, next) {
   const sessionData = verifySessionToken(req.cookies.session);
-  
+
   if (!sessionData) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
   // Attach session data for logging
   req.sessionData = sessionData;
-  
+
   // Get proxy target
   const target = await getProxyTarget(sessionData);
-  
+
   if (!target) {
     return res.status(500).json({ error: 'Unable to connect to host server' });
   }
@@ -292,24 +297,34 @@ app.all('/api/*', proxyAuth, (req, res) => {
     req.headers['content-length'] = Buffer.byteLength(bodyData);
 
     // Store for proxy to use
-    proxy.web(req, res, {
-      target: targetUrl,
-      buffer: require('stream').Readable.from([bodyData])
-    }, (err) => {
-      console.error(`Proxy error for ${req.path}:`, err.message);
-      if (!res.headersSent) {
-        res.status(502).json({ error: 'Bad Gateway - Host server not responding' });
+    proxy.web(
+      req,
+      res,
+      {
+        target: targetUrl,
+        buffer: require('stream').Readable.from([bodyData]),
+      },
+      (err) => {
+        console.error(`Proxy error for ${req.path}:`, err.message);
+        if (!res.headersSent) {
+          res.status(502).json({ error: 'Bad Gateway - Host server not responding' });
+        }
       }
-    });
+    );
   } else {
-    proxy.web(req, res, {
-      target: targetUrl
-    }, (err) => {
-      console.error(`Proxy error for ${req.path}:`, err.message);
-      if (!res.headersSent) {
-        res.status(502).json({ error: 'Bad Gateway - Host server not responding' });
+    proxy.web(
+      req,
+      res,
+      {
+        target: targetUrl,
+      },
+      (err) => {
+        console.error(`Proxy error for ${req.path}:`, err.message);
+        if (!res.headersSent) {
+          res.status(502).json({ error: 'Bad Gateway - Host server not responding' });
+        }
       }
-    });
+    );
   }
 });
 
@@ -338,14 +353,19 @@ app.get('/', pageAuth, (req, res) => {
   const target = req.proxyTarget;
   const targetUrl = `http://${target.ip}:${target.port}`;
 
-  proxy.web(req, res, {
-    target: targetUrl
-  }, (err) => {
-    console.error(`Proxy error for /:`, err.message);
-    if (!res.headersSent) {
-      res.status(502).send('Host server not responding');
+  proxy.web(
+    req,
+    res,
+    {
+      target: targetUrl,
+    },
+    (err) => {
+      console.error(`Proxy error for /:`, err.message);
+      if (!res.headersSent) {
+        res.status(502).send('Host server not responding');
+      }
     }
-  });
+  );
 });
 
 // WebSocket proxy with auth
@@ -354,7 +374,7 @@ server.on('upgrade', async (req, socket, head) => {
   const cookies = {};
   const cookieHeader = req.headers.cookie;
   if (cookieHeader) {
-    cookieHeader.split(';').forEach(cookie => {
+    cookieHeader.split(';').forEach((cookie) => {
       const [name, ...rest] = cookie.split('=');
       cookies[name.trim()] = rest.join('=').trim();
     });
@@ -369,7 +389,7 @@ server.on('upgrade', async (req, socket, head) => {
   }
 
   const target = await getProxyTarget(sessionData);
-  
+
   if (!target) {
     socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
     socket.destroy();
@@ -378,13 +398,19 @@ server.on('upgrade', async (req, socket, head) => {
 
   const targetUrl = `http://${target.ip}:${target.port}`;
   console.log(`WebSocket upgrade for ${sessionData.username} -> ${targetUrl}`);
-  
-  proxy.ws(req, socket, head, {
-    target: targetUrl
-  }, (err) => {
-    console.error(`WebSocket proxy error:`, err.message);
-    socket.destroy();
-  });
+
+  proxy.ws(
+    req,
+    socket,
+    head,
+    {
+      target: targetUrl,
+    },
+    (err) => {
+      console.error(`WebSocket proxy error:`, err.message);
+      socket.destroy();
+    }
+  );
 });
 
 // Health check endpoint (no auth required)
@@ -393,7 +419,7 @@ app.get('/health', async (req, res) => {
   res.json({
     status: 'ok',
     gateway: 'running',
-    hostServer: serverRunning ? 'accessible' : 'not accessible'
+    hostServer: serverRunning ? 'accessible' : 'not accessible',
   });
 });
 
@@ -404,7 +430,9 @@ server.listen(PORT, HOST, () => {
   console.log('║  Claude Code Web - Hybrid Gateway                   ║');
   console.log('║                                                      ║');
   console.log(`║  Gateway:     http://${HOST}:${PORT.toString().padEnd(24)} ║`);
-  console.log(`║  Host Server: ${hostServerManager.hostIP}:${hostServerManager.hostPort.toString().padEnd(21)} ║`);
+  console.log(
+    `║  Host Server: ${hostServerManager.hostIP}:${hostServerManager.hostPort.toString().padEnd(21)} ║`
+  );
   console.log('║                                                      ║');
   console.log('║  Auth: PAM (System Users)                           ║');
   console.log('║  Mode: Gateway in Docker, Sessions on Host          ║');

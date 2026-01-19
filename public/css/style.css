@@ -19,14 +19,17 @@
 }
 
 /* Reset */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
 /* Base */
-html, body {
+html,
+body {
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
   background-color: var(--bg-primary);
@@ -463,8 +466,14 @@ html, body {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .message.user {
@@ -532,7 +541,9 @@ html, body {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Tool Execution Display */
@@ -660,7 +671,8 @@ html, body {
   margin-bottom: 0;
 }
 
-.message-content ul, .message-content ol {
+.message-content ul,
+.message-content ol {
   margin: 0.5rem 0;
   padding-left: 1.5rem;
 }
@@ -1419,7 +1431,9 @@ html, body {
   border-radius: 4px 4px 0 0;
   gap: 0.5rem;
   white-space: nowrap;
-  transition: background-color 0.2s, color 0.2s;
+  transition:
+    background-color 0.2s,
+    color 0.2s;
 }
 
 .terminal-tab:hover {
@@ -1892,6 +1906,61 @@ html, body {
   }
 }
 
+/* Web Search Toggle Button */
+.toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  font-size: 0.875rem;
+}
+
+.toggle-btn:hover {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+}
+
+.toggle-btn .toggle-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.toggle-btn .toggle-label {
+  font-weight: 500;
+}
+
+/* Active state - blue accent */
+.toggle-btn.toggle-active {
+  border-color: #60a5fa;
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.1);
+}
+
+.toggle-btn.toggle-active:hover {
+  background: rgba(96, 165, 250, 0.2);
+  border-color: #60a5fa;
+  color: #60a5fa;
+}
+
+/* Responsive Toggle Button */
+@media (max-width: 768px) {
+  .toggle-btn .toggle-label {
+    display: none;
+  }
+
+  .toggle-btn {
+    padding: 0.5rem;
+  }
+}
+
 /* Agent Activity Panel */
 .agents-panel {
   display: none;
@@ -2026,8 +2095,13 @@ html, body {
 }
 
 @keyframes agentPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 .agent-item-type {

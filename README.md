@@ -45,11 +45,13 @@ Claude Code Web uses a hybrid architecture:
 ```
 
 **Components:**
+
 - **Gateway (Docker)**: Handles PAM authentication, proxies to host server
 - **Host Server (Node.js)**: Manages Claude sessions and terminals on host
 - **Base Image**: Ubuntu 24.04 for yescrypt password hash support
 
 **Features:**
+
 - Authenticates against `/etc/passwd` and `/etc/shadow`
 - Supports password hash algorithms: yescrypt ($y$), SHA-512 ($6$), SHA-256 ($5$), MD5 ($1$)
 - Uses Python's crypt module for password verification
@@ -69,17 +71,20 @@ Claude Code Web uses a hybrid architecture:
 ### Installation
 
 1. Clone the repository:
+
    ```bash
    git clone <repository-url>
    cd claude-code-web
    ```
 
 2. Install dependencies:
+
    ```bash
    npm install
    ```
 
 3. Start the server:
+
    ```bash
    ./start.sh
    ```
@@ -90,6 +95,7 @@ Claude Code Web uses a hybrid architecture:
    ```
 
 The start script will:
+
 - Start the Node.js server on port 3001 (host machine)
 - Build the gateway Docker image (Ubuntu 24.04)
 - Start the gateway container on port 3000
@@ -119,6 +125,7 @@ SESSION_SECRET=your_random_secret_here
 ```
 
 Usage:
+
 ```bash
 GATEWAY_PORT=8080 HOST_PORT=8081 ./start.sh
 ```
@@ -128,16 +135,19 @@ GATEWAY_PORT=8080 HOST_PORT=8081 ./start.sh
 ### View Logs
 
 **Gateway logs:**
+
 ```bash
 docker logs -f claude-code-gateway
 ```
 
 **Host server logs:**
+
 ```bash
 tail -f ./data/server.log
 ```
 
 **Check status:**
+
 ```bash
 # Check gateway is running
 docker ps | grep claude-code-gateway
@@ -169,6 +179,7 @@ curl http://localhost:3000/health
 **Issue:** Error about host server not accessible
 
 **Solutions:**
+
 - Verify host server is running: `curl http://localhost:3001/api/health`
 - Check host server logs: `tail -f ./data/server.log`
 - On Linux, ensure Docker can reach host via `172.17.0.1`
@@ -179,6 +190,7 @@ curl http://localhost:3000/health
 **Issue:** Login fails with invalid credentials
 
 **Solutions:**
+
 - Verify the user exists: `id username`
 - Check `/etc/shadow` is readable by Docker container
 - Ensure password is correct
@@ -190,6 +202,7 @@ curl http://localhost:3000/health
 **Issue:** Docker container fails to start
 
 **Solutions:**
+
 - Check Docker is running: `docker ps`
 - View gateway logs: `docker logs claude-code-gateway`
 - Ensure port 3000 is available: `lsof -i :3000`
@@ -205,6 +218,7 @@ curl http://localhost:3000/health
 **Issue:** Logged in but sessions don't start
 
 **Solutions:**
+
 - Check Claude CLI is installed on host: `which claude`
 - Verify Claude credentials: `ls -la ~/.claude/.credentials.json`
 - Check host server logs for errors
@@ -215,6 +229,7 @@ curl http://localhost:3000/health
 **Issue:** WebSocket errors in browser console
 
 **Solutions:**
+
 - Ensure you're logged in (session cookie required)
 - Check gateway logs for WebSocket proxy errors
 - Verify host server is running and accessible
@@ -224,6 +239,7 @@ curl http://localhost:3000/health
 **Issue:** Port 3000 or 3001 already in use
 
 **Solutions:**
+
 ```bash
 # Find and kill process on port
 sudo fuser -k 3000/tcp
@@ -237,11 +253,13 @@ GATEWAY_PORT=8080 HOST_PORT=8081 ./start.sh
 ### Local Development
 
 **Terminal 1 - Host Server:**
+
 ```bash
 PORT=3001 SINGLE_USER_MODE=true node server.js
 ```
 
 **Terminal 2 - Gateway:**
+
 ```bash
 docker build -t claude-code-gateway -f Dockerfile.gateway .
 docker run -p 3000:3000 \
@@ -257,29 +275,29 @@ docker run -p 3000:3000 \
 
 The web interface supports three operating modes:
 
-| Mode | Description |
-|------|-------------|
-| **Default** | Normal operation with permission prompts for tool execution |
-| **Accept Edits** | Auto-approves file edit operations (Edit, Write, MultiEdit, NotebookEdit) |
-| **Plan** | Read-only mode for exploration and planning - only allows Glob, Grep, Read, WebFetch, WebSearch, Task, TodoWrite |
+| Mode             | Description                                                                                                      |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **Default**      | Normal operation with permission prompts for tool execution                                                      |
+| **Accept Edits** | Auto-approves file edit operations (Edit, Write, MultiEdit, NotebookEdit)                                        |
+| **Plan**         | Read-only mode for exploration and planning - only allows Glob, Grep, Read, WebFetch, WebSearch, Task, TodoWrite |
 
 Switch modes via the UI or send a `set_mode` WebSocket message.
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/login` | Login page |
-| POST | `/api/login` | Authenticate user |
-| POST | `/api/logout` | End session |
-| GET | `/api/sessions` | List active sessions |
-| POST | `/api/sessions` | Create new session |
-| DELETE | `/api/sessions/:id` | Terminate session |
-| GET | `/api/home` | Get user's home directory |
-| GET | `/api/directories` | Browse directories (with path query param) |
-| GET | `/api/health` | Health check (no auth) |
-| GET | `/api/server/status` | Server status (gateway only) |
-| GET | `/health` | Gateway health check |
+| Method | Endpoint             | Description                                |
+| ------ | -------------------- | ------------------------------------------ |
+| GET    | `/login`             | Login page                                 |
+| POST   | `/api/login`         | Authenticate user                          |
+| POST   | `/api/logout`        | End session                                |
+| GET    | `/api/sessions`      | List active sessions                       |
+| POST   | `/api/sessions`      | Create new session                         |
+| DELETE | `/api/sessions/:id`  | Terminate session                          |
+| GET    | `/api/home`          | Get user's home directory                  |
+| GET    | `/api/directories`   | Browse directories (with path query param) |
+| GET    | `/api/health`        | Health check (no auth)                     |
+| GET    | `/api/server/status` | Server status (gateway only)               |
+| GET    | `/health`            | Gateway health check                       |
 
 ### WebSocket Protocol
 
@@ -321,28 +339,28 @@ ws.send(JSON.stringify({ type: 'terminal_close', terminalId: '...' }));
 
 **Server → Client Message Types:**
 
-| Type | Description |
-|------|-------------|
-| `connected` | WebSocket connection established |
-| `session_created` | New session created with ID |
-| `session_joined` | Joined session with history |
-| `session_renamed` | Session name changed |
-| `sessions_list` | List of all sessions |
-| `message_sent` | Message sent to Claude |
-| `chunk` | Streaming text response |
-| `complete` | Response complete |
-| `result` | Final result with message |
-| `error` | Error occurred |
-| `permission_request` | Tool needs user approval |
-| `prompt` | AskUserQuestion from Claude |
-| `mode_changed` | Operating mode changed |
-| `agent_start` | New agent task started |
-| `task_notification` | Background task completed |
-| `tool_use` | Tool being executed |
-| `exit_plan_mode_request` | Plan mode exit requested |
-| `terminal_created` | Terminal ready |
-| `terminal_data` | Terminal output |
-| `terminal_exit` | Terminal closed |
+| Type                     | Description                      |
+| ------------------------ | -------------------------------- |
+| `connected`              | WebSocket connection established |
+| `session_created`        | New session created with ID      |
+| `session_joined`         | Joined session with history      |
+| `session_renamed`        | Session name changed             |
+| `sessions_list`          | List of all sessions             |
+| `message_sent`           | Message sent to Claude           |
+| `chunk`                  | Streaming text response          |
+| `complete`               | Response complete                |
+| `result`                 | Final result with message        |
+| `error`                  | Error occurred                   |
+| `permission_request`     | Tool needs user approval         |
+| `prompt`                 | AskUserQuestion from Claude      |
+| `mode_changed`           | Operating mode changed           |
+| `agent_start`            | New agent task started           |
+| `task_notification`      | Background task completed        |
+| `tool_use`               | Tool being executed              |
+| `exit_plan_mode_request` | Plan mode exit requested         |
+| `terminal_created`       | Terminal ready                   |
+| `terminal_data`          | Terminal output                  |
+| `terminal_exit`          | Terminal closed                  |
 
 ## Session Persistence
 
@@ -358,17 +376,17 @@ Sessions and message history are persisted to a SQLite database:
 
 ## Dependencies
 
-| Package | Purpose |
-|---------|---------|
-| `@anthropic-ai/claude-agent-sdk` | Claude Agent SDK for AI interactions |
-| `express` | HTTP server framework |
-| `ws` | WebSocket server |
-| `cookie-parser` | Parse cookies for sessions |
-| `uuid` | Generate unique session IDs |
-| `node-pty` | Terminal emulation |
-| `http-proxy` | Proxy requests in gateway |
-| `better-sqlite3` | SQLite database for session persistence |
-| `zod` | Schema validation |
+| Package                          | Purpose                                 |
+| -------------------------------- | --------------------------------------- |
+| `@anthropic-ai/claude-agent-sdk` | Claude Agent SDK for AI interactions    |
+| `express`                        | HTTP server framework                   |
+| `ws`                             | WebSocket server                        |
+| `cookie-parser`                  | Parse cookies for sessions              |
+| `uuid`                           | Generate unique session IDs             |
+| `node-pty`                       | Terminal emulation                      |
+| `http-proxy`                     | Proxy requests in gateway               |
+| `better-sqlite3`                 | SQLite database for session persistence |
+| `zod`                            | Schema validation                       |
 
 ## License
 

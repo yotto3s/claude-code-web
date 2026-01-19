@@ -71,6 +71,8 @@ class ClaudeProcess extends EventEmitter {
     this.agentContextStack = [];
     /** @type {Set<string>} Tools that have been approved via "Allow All" */
     this.allowedTools = new Set();
+    /** @type {boolean} Whether web search is enabled */
+    this.webSearchEnabled = false;
   }
 
   /**
@@ -127,6 +129,17 @@ class ClaudeProcess extends EventEmitter {
     console.log(`[ClaudeProcess] All allowed tools cleared`);
   }
 
+  /**
+   * Enable or disable web search capability.
+   * When enabled, Claude will be encouraged to use web search for current information.
+   *
+   * @param {boolean} enabled - Whether web search is enabled
+   */
+  setWebSearchEnabled(enabled) {
+    this.webSearchEnabled = Boolean(enabled);
+    console.log(`[ClaudeProcess] Web search ${this.webSearchEnabled ? 'enabled' : 'disabled'}`);
+  }
+
   async start() {
     // Create async generator for streaming input
     const messageGenerator = this.createMessageGenerator();
@@ -136,52 +149,62 @@ class ClaudeProcess extends EventEmitter {
       cwd: this.workingDirectory,
       permissionMode: 'default',
       canUseTool: async (toolName, input, options) => {
-          console.log(`[canUseTool] Tool: ${toolName}, Mode: ${this.mode}`);
+        console.log(`[canUseTool] Tool: ${toolName}, Mode: ${this.mode}`);
 
-          // Handle AskUserQuestion specially - return user answers via updatedInput
-          if (toolName === 'AskUserQuestion') {
-            return this.handleAskUserQuestion(toolName, input, options);
+        // Handle AskUserQuestion specially - return user answers via updatedInput
+        if (toolName === 'AskUserQuestion') {
+          return this.handleAskUserQuestion(toolName, input, options);
+        }
+
+        // Plan mode: only allow read-only tools, deny all write/execute operations
+        if (this.mode === 'plan') {
+          // ExitPlanMode requires user approval to switch modes
+          if (toolName === 'ExitPlanMode') {
+            console.log(`[canUseTool] Plan mode: ExitPlanMode called, requesting user approval`);
+            return this.handleExitPlanModeRequest(toolName, input, options);
           }
 
-          // Plan mode: only allow read-only tools, deny all write/execute operations
-          if (this.mode === 'plan') {
-            // ExitPlanMode requires user approval to switch modes
-            if (toolName === 'ExitPlanMode') {
-              console.log(`[canUseTool] Plan mode: ExitPlanMode called, requesting user approval`);
-              return this.handleExitPlanModeRequest(toolName, input, options);
-            }
-
-            const readOnlyTools = [
-              'Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch',
-              'Task', 'TodoWrite', 'EnterPlanMode'
-            ];
-            if (readOnlyTools.includes(toolName)) {
-              console.log(`[canUseTool] Plan mode: allowing read-only tool: ${toolName}`);
-              return { behavior: 'allow', updatedInput: input };
-            }
-            console.log(`[canUseTool] Plan mode: denying write/execute tool: ${toolName}`);
-            return { behavior: 'deny', message: 'Plan mode: only read-only operations are allowed. Switch to default mode to execute this tool.' };
-          }
-
-          // Accept Edits mode: auto-approve file operations
-          if (this.mode === 'acceptEdits') {
-            const editTools = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
-            if (editTools.includes(toolName)) {
-              console.log(`[canUseTool] Auto-approving edit tool: ${toolName}`);
-              return { behavior: 'allow', updatedInput: input };
-            }
-          }
-
-          // Check if tool was previously approved via "Allow All"
-          if (this.isToolAllowed(toolName)) {
-            console.log(`[canUseTool] Tool "${toolName}" pre-approved via Allow All`);
+          const readOnlyTools = [
+            'Read',
+            'Glob',
+            'Grep',
+            'WebFetch',
+            'WebSearch',
+            'Task',
+            'TodoWrite',
+            'EnterPlanMode',
+          ];
+          if (readOnlyTools.includes(toolName)) {
+            console.log(`[canUseTool] Plan mode: allowing read-only tool: ${toolName}`);
             return { behavior: 'allow', updatedInput: input };
           }
-
-          // Default mode: go through permission flow
-          console.log(`[canUseTool] Requesting permission for: ${toolName}`);
-          return this.handlePermissionRequest(toolName, input, options);
+          console.log(`[canUseTool] Plan mode: denying write/execute tool: ${toolName}`);
+          return {
+            behavior: 'deny',
+            message:
+              'Plan mode: only read-only operations are allowed. Switch to default mode to execute this tool.',
+          };
         }
+
+        // Accept Edits mode: auto-approve file operations
+        if (this.mode === 'acceptEdits') {
+          const editTools = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
+          if (editTools.includes(toolName)) {
+            console.log(`[canUseTool] Auto-approving edit tool: ${toolName}`);
+            return { behavior: 'allow', updatedInput: input };
+          }
+        }
+
+        // Check if tool was previously approved via "Allow All"
+        if (this.isToolAllowed(toolName)) {
+          console.log(`[canUseTool] Tool "${toolName}" pre-approved via Allow All`);
+          return { behavior: 'allow', updatedInput: input };
+        }
+
+        // Default mode: go through permission flow
+        console.log(`[canUseTool] Requesting permission for: ${toolName}`);
+        return this.handlePermissionRequest(toolName, input, options);
+      },
     };
 
     // Add resume option if we have an SDK session ID to resume
@@ -193,7 +216,7 @@ class ClaudeProcess extends EventEmitter {
     // Start the SDK query
     this.queryInstance = query({
       prompt: messageGenerator,
-      options: queryOptions
+      options: queryOptions,
     });
 
     // Process streaming responses
@@ -205,7 +228,7 @@ class ClaudeProcess extends EventEmitter {
   async *createMessageGenerator() {
     while (true) {
       // Wait for a message to be queued
-      const message = await new Promise(resolve => {
+      const message = await new Promise((resolve) => {
         if (this.messageQueue.length > 0) {
           resolve(this.messageQueue.shift());
         } else {
@@ -220,10 +243,10 @@ class ClaudeProcess extends EventEmitter {
         type: 'user',
         message: {
           role: 'user',
-          content: message
+          content: message,
         },
         parent_tool_use_id: null,
-        session_id: this.sessionId || 'pending'
+        session_id: this.sessionId || 'pending',
       };
     }
   }
@@ -253,11 +276,11 @@ class ClaudeProcess extends EventEmitter {
 
           this.emit('task_notification', {
             taskId: taskId,
-            status: msg.status,  // 'completed' | 'failed' | 'stopped'
+            status: msg.status, // 'completed' | 'failed' | 'stopped'
             outputFile: msg.output_file,
             summary: msg.summary,
             description: agentInfo?.description || 'Unknown task',
-            agentType: agentInfo?.agentType || 'unknown'
+            agentType: agentInfo?.agentType || 'unknown',
           });
 
           // Remove from active agents
@@ -288,7 +311,7 @@ class ClaudeProcess extends EventEmitter {
                 this.activeAgents.set(taskId, {
                   description,
                   agentType,
-                  startTime: Date.now()
+                  startTime: Date.now(),
                 });
 
                 // Push this agent onto the context stack
@@ -298,22 +321,23 @@ class ClaudeProcess extends EventEmitter {
                   taskId,
                   description,
                   agentType,
-                  startTime: Date.now()
+                  startTime: Date.now(),
                 });
               }
 
               // Get current agent context (if any) for non-Task tools
               // Task tools themselves are shown in main chat, but their child tools go to the panel
-              const currentAgentId = block.name !== 'Task' && this.agentContextStack.length > 0
-                ? this.agentContextStack[this.agentContextStack.length - 1]
-                : null;
+              const currentAgentId =
+                block.name !== 'Task' && this.agentContextStack.length > 0
+                  ? this.agentContextStack[this.agentContextStack.length - 1]
+                  : null;
 
               // AskUserQuestion is handled in canUseTool callback, not here
               this.emit('tool_use', {
                 id: block.id,
                 name: block.name,
                 input: block.input,
-                agentId: currentAgentId
+                agentId: currentAgentId,
               });
             }
           }
@@ -338,8 +362,8 @@ class ClaudeProcess extends EventEmitter {
       request: {
         tool_name: toolName,
         input: input,
-        tool_use_id: options?.toolUseID
-      }
+        tool_use_id: options?.toolUseID,
+      },
     });
 
     // Wait for user response (no timeout)
@@ -350,7 +374,7 @@ class ClaudeProcess extends EventEmitter {
           this.pendingPermissions.delete(requestId);
           resolve(result);
         },
-        reject
+        reject,
       });
     });
   }
@@ -364,7 +388,7 @@ class ClaudeProcess extends EventEmitter {
       request_id: requestId,
       toolUseId: options?.toolUseID,
       toolName: toolName,
-      input: input
+      input: input,
     });
 
     // Wait for user response (no timeout)
@@ -375,9 +399,9 @@ class ClaudeProcess extends EventEmitter {
           // Return allow with the answers populated in input
           resolve({
             behavior: 'allow',
-            updatedInput: { ...input, answers }
+            updatedInput: { ...input, answers },
           });
-        }
+        },
       });
     });
   }
@@ -401,7 +425,7 @@ class ClaudeProcess extends EventEmitter {
     this.emit('exit_plan_mode_request', {
       request_id: requestId,
       toolUseId: options?.toolUseID,
-      input: input
+      input: input,
     });
 
     // Wait for user response (no timeout)
@@ -416,7 +440,7 @@ class ClaudeProcess extends EventEmitter {
             // User denied - deny the tool
             resolve({ behavior: 'deny', message: 'User denied exiting plan mode' });
           }
-        }
+        },
       });
     });
   }
@@ -438,7 +462,16 @@ class ClaudeProcess extends EventEmitter {
     // Prepend mode context for plan mode so the agent knows its current mode
     let messageContent = content;
     if (this.mode === 'plan') {
-      messageContent = `[SYSTEM: You are currently in PLAN MODE. In this mode, you should focus on planning and analysis only. You can read files, search code, and explore the codebase, but you should NOT make any changes to files or execute commands that modify the system. Create a detailed plan for the user's request and use the ExitPlanMode tool when ready for approval.]\n\n${content}`;
+      messageContent = `[SYSTEM: You are currently in PLAN MODE. In this mode, you should focus on planning and analysis only. You can read files, search code, and explore the codebase, but you should NOT make any changes to files or execute commands that modify the system. Create a detailed plan for the user's request and use the ExitPlanMode tool when ready for approval.
+
+IMPORTANT: Before calling ExitPlanMode, you MUST share your complete plan with the user in the chat message. Present the plan clearly, then ask if they approve before using the ExitPlanMode tool.
+
+If web search is enabled, actively use it during planning to research best practices, current documentation, latest APIs, and any relevant information that could improve your plan.]\n\n${content}`;
+    }
+
+    // Add web search encouragement if enabled
+    if (this.webSearchEnabled) {
+      messageContent = `[SYSTEM: Web search is ENABLED. You are encouraged to use the WebSearch tool to find current, up-to-date information when it would be helpful for the task. Use web search proactively for: recent news, current documentation, latest versions, real-time data, or any information that may have changed since your training.]\n\n${messageContent}`;
     }
 
     if (this.messageResolver) {
@@ -474,12 +507,12 @@ class ClaudeProcess extends EventEmitter {
 
       pending.resolve({
         behavior: 'allow',
-        updatedInput: toolInput || undefined
+        updatedInput: toolInput || undefined,
       });
     } else {
       pending.resolve({
         behavior: 'deny',
-        message: 'User denied permission'
+        message: 'User denied permission',
       });
     }
     return { success: true, toolName: pending.toolName };
@@ -515,7 +548,7 @@ class ClaudeProcess extends EventEmitter {
         description: info.description,
         agentType: info.agentType,
         startTime: info.startTime,
-        status: 'running'
+        status: 'running',
       });
     }
     return agents;

@@ -13,7 +13,7 @@ async function authMiddleware(req, res, next) {
 
   req.auth = {
     type: 'local',
-    ip: clientIP
+    ip: clientIP,
   };
 
   return next();
@@ -21,5 +21,5 @@ async function authMiddleware(req, res, next) {
 
 module.exports = {
   authMiddleware,
-  getClientIP
+  getClientIP,
 };

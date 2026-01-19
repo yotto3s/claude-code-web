@@ -35,7 +35,7 @@ const SINGLE_USER_MODE = process.env.SINGLE_USER_MODE === 'true';
 // Parse users from environment: "user1:hash1,user2:hash2"
 const USERS = new Map();
 if (!SINGLE_USER_MODE && process.env.USERS) {
-  process.env.USERS.split(',').forEach(entry => {
+  process.env.USERS.split(',').forEach((entry) => {
     const [username, hash] = entry.split(':');
     if (username && hash) USERS.set(username.trim(), hash.trim());
   });
@@ -68,13 +68,18 @@ function verifySessionToken(token) {
   if (!token) return null;
   const [data, signature] = token.split('.');
   if (!data || !signature) return null;
-  const expected = crypto.createHmac('sha256', SESSION_SECRET).update(Buffer.from(data, 'base64').toString()).digest('hex');
+  const expected = crypto
+    .createHmac('sha256', SESSION_SECRET)
+    .update(Buffer.from(data, 'base64').toString())
+    .digest('hex');
   if (signature !== expected) return null;
   try {
     const parsed = JSON.parse(Buffer.from(data, 'base64').toString());
     if (parsed.exp < Date.now()) return null;
     return parsed.username;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 // Auth middleware
@@ -145,7 +150,12 @@ app.post('/api/login', (req, res) => {
   }
 
   const token = createSessionToken(username);
-  res.cookie('session', token, { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 24 * 60 * 60 * 1000 });
+  res.cookie('session', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 24 * 60 * 60 * 1000,
+  });
   res.json({ success: true, username });
 });
 
@@ -241,16 +251,16 @@ app.get('/api/directories', requireAuth, (req, res) => {
 
     // Filter to only directories, exclude hidden folders
     const directories = entries
-      .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
-      .map(entry => ({
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map((entry) => ({
         name: entry.name,
-        path: path.join(resolvedPath, entry.name)
+        path: path.join(resolvedPath, entry.name),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({
       path: resolvedPath,
-      directories
+      directories,
     });
   } catch (err) {
     if (err.code === 'EACCES') {
@@ -281,10 +291,19 @@ server.listen(PORT, HOST, () => {
 
   console.log('');
   console.log('\x1b[36m╔══════════════════════════════════════════════════════╗\x1b[0m');
-  console.log('\x1b[36m║\x1b[0m  \x1b[1mClaude Code Web Server\x1b[0m                              \x1b[36m║\x1b[0m');
-  console.log('\x1b[36m║\x1b[0m                                                      \x1b[36m║\x1b[0m');
-  console.log(`\x1b[36m║\x1b[0m  Listening: \x1b[32mhttp://${HOST}:${PORT}\x1b[0m`.padEnd(63) + '\x1b[36m║\x1b[0m');
-  console.log('\x1b[36m║\x1b[0m                                                      \x1b[36m║\x1b[0m');
+  console.log(
+    '\x1b[36m║\x1b[0m  \x1b[1mClaude Code Web Server\x1b[0m                              \x1b[36m║\x1b[0m'
+  );
+  console.log(
+    '\x1b[36m║\x1b[0m                                                      \x1b[36m║\x1b[0m'
+  );
+  console.log(
+    `\x1b[36m║\x1b[0m  Listening: \x1b[32mhttp://${HOST}:${PORT}\x1b[0m`.padEnd(63) +
+      '\x1b[36m║\x1b[0m'
+  );
+  console.log(
+    '\x1b[36m║\x1b[0m                                                      \x1b[36m║\x1b[0m'
+  );
   console.log(`\x1b[36m║\x1b[0m  Mode: \x1b[32m${authMode}\x1b[0m`.padEnd(63) + '\x1b[36m║\x1b[0m');
   console.log('\x1b[36m╚══════════════════════════════════════════════════════╝\x1b[0m');
   console.log('');

@@ -4,20 +4,20 @@
 marked.setOptions({
   breaks: true,
   gfm: true,
-  highlight: function(code, lang) {
+  highlight: function (code, lang) {
     if (lang && hljs.getLanguage(lang)) {
       try {
         return hljs.highlight(code, { language: lang }).value;
       } catch (err) {}
     }
     return hljs.highlightAuto(code).value;
-  }
+  },
 });
 
 // Custom renderer for code blocks
 const renderer = new marked.Renderer();
 
-renderer.code = function(code, language) {
+renderer.code = function (code, language) {
   const lang = language || 'plaintext';
   let highlighted;
 
@@ -58,20 +58,23 @@ function copyCode(id) {
 
   const text = codeElement.textContent;
 
-  navigator.clipboard.writeText(text).then(() => {
-    // Find the copy button
-    const btn = codeElement.closest('.code-block').querySelector('.copy-btn');
-    if (btn) {
-      btn.textContent = 'Copied!';
-      btn.classList.add('copied');
-      setTimeout(() => {
-        btn.textContent = 'Copy';
-        btn.classList.remove('copied');
-      }, 2000);
-    }
-  }).catch(err => {
-    console.error('Failed to copy:', err);
-  });
+  navigator.clipboard
+    .writeText(text)
+    .then(() => {
+      // Find the copy button
+      const btn = codeElement.closest('.code-block').querySelector('.copy-btn');
+      if (btn) {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 2000);
+      }
+    })
+    .catch((err) => {
+      console.error('Failed to copy:', err);
+    });
 }
 
 function renderMarkdown(text) {

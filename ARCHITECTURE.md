@@ -51,12 +51,14 @@ The gateway runs in a Docker container (Ubuntu 24.04) and handles:
 - **WebSocket Proxy**: Forwards WebSocket connections to host server
 
 **Key Features:**
+
 - Ubuntu 24.04 base image for yescrypt password hash support
 - Python's crypt module for password verification
 - URL-decoding of session cookies for WebSocket auth
 - Re-attaches request body for POST proxying (after express.json() consumes it)
 
 **Environment Variables:**
+
 - `HOST_SERVER_IP` - Host server IP (default: `host.docker.internal` or `172.17.0.1`)
 - `HOST_SERVER_PORT` - Host server port (default: `3001`)
 - `SESSION_SECRET` - Secret for signing session cookies
@@ -75,6 +77,7 @@ System authentication module:
   - `$1$` - MD5 (legacy)
 
 **Password Verification:**
+
 ```python
 import crypt
 generated = crypt.crypt(password, stored_hash)
@@ -100,6 +103,7 @@ Express.js application running on the host machine:
 - Runs in single-user mode (authentication handled by gateway)
 
 **Key Routes:**
+
 - `GET /` - Main chat interface
 - `GET /api/sessions` - List sessions
 - `POST /api/sessions` - Create session
@@ -127,10 +131,12 @@ Manages Claude sessions with SQLite persistence:
 ```
 
 **Configuration:**
+
 - `MAX_SESSIONS` - Maximum concurrent sessions (default: 5)
 - `SESSION_TIMEOUT` - Session timeout in ms (default: 3600000 = 1 hour)
 
 **Session Lifecycle:**
+
 1. Load persisted sessions from SQLite on startup
 2. Create session with working directory and name
 3. Spawn Claude process via SDK
@@ -146,10 +152,12 @@ Manages Claude sessions with SQLite persistence:
 SQLite persistence layer using better-sqlite3:
 
 **Tables:**
+
 - `sessions` - Session metadata (id, name, working_directory, mode, timestamps, is_active)
 - `messages` - Message history (session_id, role, content, timestamp)
 
 **Features:**
+
 - WAL mode for better concurrent access
 - Periodic WAL checkpoints (every 5 minutes)
 - Automatic cleanup of expired sessions
@@ -163,7 +171,7 @@ Wraps the Claude Agent SDK for AI interactions:
 const { query } = require('@anthropic-ai/claude-agent-sdk');
 
 queryInstance = query({
-  prompt: messageGenerator,  // Async generator for streaming input
+  prompt: messageGenerator, // Async generator for streaming input
   options: {
     cwd: workingDirectory,
     permissionMode: 'default',
@@ -173,17 +181,19 @@ queryInstance = query({
       // - Plan mode: only allow read-only tools
       // - Accept Edits mode: auto-approve file edits
       // - Default mode: prompt user for permission
-    }
-  }
+    },
+  },
 });
 ```
 
 **Operating Modes:**
+
 - `default` - Normal operation with permission prompts
 - `acceptEdits` - Auto-approve Edit, Write, MultiEdit, NotebookEdit
 - `plan` - Read-only mode (only allows Glob, Grep, Read, WebFetch, WebSearch, Task, TodoWrite)
 
 **Event Types Emitted:**
+
 - `chunk` - Streaming text content
 - `content_start/stop` - Content block boundaries
 - `tool_input_delta` - Tool use streaming
@@ -228,49 +238,49 @@ Browser Client            Gateway              Host Server
 
 **Message Types:**
 
-| Client → Server | Description |
-|-----------------|-------------|
-| `create_session` | Create new Claude session (with workingDirectory, name) |
-| `join_session` | Join existing session |
-| `message` | Send message to Claude |
-| `cancel` | Cancel current operation |
-| `list_sessions` | List all sessions |
-| `rename_session` | Rename a session |
-| `list_agents` | List active agents |
-| `set_mode` | Change mode (default/acceptEdits/plan) |
-| `prompt_response` | Respond to AskUserQuestion |
-| `permission_response` | Respond to tool permission request |
-| `exit_plan_mode_response` | Approve/deny exiting plan mode |
-| `terminal_create` | Create new PTY terminal |
-| `terminal_input` | Send input to terminal |
-| `terminal_resize` | Resize terminal |
-| `terminal_close` | Close terminal |
+| Client → Server           | Description                                             |
+| ------------------------- | ------------------------------------------------------- |
+| `create_session`          | Create new Claude session (with workingDirectory, name) |
+| `join_session`            | Join existing session                                   |
+| `message`                 | Send message to Claude                                  |
+| `cancel`                  | Cancel current operation                                |
+| `list_sessions`           | List all sessions                                       |
+| `rename_session`          | Rename a session                                        |
+| `list_agents`             | List active agents                                      |
+| `set_mode`                | Change mode (default/acceptEdits/plan)                  |
+| `prompt_response`         | Respond to AskUserQuestion                              |
+| `permission_response`     | Respond to tool permission request                      |
+| `exit_plan_mode_response` | Approve/deny exiting plan mode                          |
+| `terminal_create`         | Create new PTY terminal                                 |
+| `terminal_input`          | Send input to terminal                                  |
+| `terminal_resize`         | Resize terminal                                         |
+| `terminal_close`          | Close terminal                                          |
 
-| Server → Client | Description |
-|-----------------|-------------|
-| `connected` | Connection established |
-| `session_created` | Session ready |
-| `session_joined` | Joined with history (and mode) |
-| `session_renamed` | Session name changed |
-| `sessions_list` | List of all sessions |
-| `message_sent` | Message sent to Claude |
-| `chunk` | Streaming text |
-| `content_start/stop` | Content boundaries |
-| `tool_use` | Tool being executed (with agentId) |
-| `complete` | Response complete |
-| `result` | Final result |
-| `error` | Error occurred |
-| `cancelled` | Operation cancelled |
-| `permission_request` | Tool needs user approval |
-| `prompt` | AskUserQuestion from Claude |
-| `mode_changed` | Operating mode changed |
-| `agent_start` | New agent task started |
-| `task_notification` | Background task completed |
-| `agents_list` | List of active agents |
-| `exit_plan_mode_request` | Plan mode exit requested |
-| `terminal_created` | Terminal ready with ID |
-| `terminal_data` | Terminal output data |
-| `terminal_exit` | Terminal closed |
+| Server → Client          | Description                        |
+| ------------------------ | ---------------------------------- |
+| `connected`              | Connection established             |
+| `session_created`        | Session ready                      |
+| `session_joined`         | Joined with history (and mode)     |
+| `session_renamed`        | Session name changed               |
+| `sessions_list`          | List of all sessions               |
+| `message_sent`           | Message sent to Claude             |
+| `chunk`                  | Streaming text                     |
+| `content_start/stop`     | Content boundaries                 |
+| `tool_use`               | Tool being executed (with agentId) |
+| `complete`               | Response complete                  |
+| `result`                 | Final result                       |
+| `error`                  | Error occurred                     |
+| `cancelled`              | Operation cancelled                |
+| `permission_request`     | Tool needs user approval           |
+| `prompt`                 | AskUserQuestion from Claude        |
+| `mode_changed`           | Operating mode changed             |
+| `agent_start`            | New agent task started             |
+| `task_notification`      | Background task completed          |
+| `agents_list`            | List of active agents              |
+| `exit_plan_mode_request` | Plan mode exit requested           |
+| `terminal_created`       | Terminal ready with ID             |
+| `terminal_data`          | Terminal output data               |
+| `terminal_exit`          | Terminal closed                    |
 
 ## Data Flow
 
@@ -435,20 +445,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ```
 
 **Why Ubuntu 24.04?**
+
 - Native yescrypt support in glibc
 - Python's crypt module works with all hash types
 - Modern package versions
 
 ## Dependencies
 
-| Package | Purpose | Used In |
-|---------|---------|---------|
-| `express` | HTTP server framework | Gateway, Host |
-| `ws` | WebSocket server | Host |
-| `cookie-parser` | Session cookie parsing | Gateway, Host |
-| `uuid` | Generate unique session IDs | Host |
-| `node-pty` | Terminal emulation | Host |
-| `http-proxy` | Proxy requests/websockets | Gateway |
+| Package         | Purpose                     | Used In       |
+| --------------- | --------------------------- | ------------- |
+| `express`       | HTTP server framework       | Gateway, Host |
+| `ws`            | WebSocket server            | Host          |
+| `cookie-parser` | Session cookie parsing      | Gateway, Host |
+| `uuid`          | Generate unique session IDs | Host          |
+| `node-pty`      | Terminal emulation          | Host          |
+| `http-proxy`    | Proxy requests/websockets   | Gateway       |
 
 ## Agent System
 
@@ -466,12 +477,14 @@ The Claude Process tracks background agents (sub-tasks) launched via the Task to
 ```
 
 **Agent Types:**
+
 - `Bash` - Command execution specialist
 - `general-purpose` - Multi-step tasks, code search
 - `Explore` - Fast codebase exploration
 - `Plan` - Implementation planning
 
 **Events:**
+
 - `agent_start` - Emitted when Task tool creates a new agent
 - `task_notification` - Emitted when background agent completes
 - `tool_use` (with `agentId`) - Tools executed by agents include their parent agent ID
@@ -484,7 +497,16 @@ The `canUseTool` callback in ClaudeProcess implements dynamic permission handlin
 canUseTool: async (toolName, input, options) => {
   // Plan mode: only allow read-only tools
   if (this.mode === 'plan') {
-    const readOnlyTools = ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'EnterPlanMode'];
+    const readOnlyTools = [
+      'Read',
+      'Glob',
+      'Grep',
+      'WebFetch',
+      'WebSearch',
+      'Task',
+      'TodoWrite',
+      'EnterPlanMode',
+    ];
     if (readOnlyTools.includes(toolName)) {
       return { behavior: 'allow', updatedInput: input };
     }
@@ -501,10 +523,11 @@ canUseTool: async (toolName, input, options) => {
 
   // Default mode: emit permission_request and wait for user response
   return this.handlePermissionRequest(toolName, input, options);
-}
+};
 ```
 
 **Special Tool Handling:**
+
 - `AskUserQuestion` - Emits `prompt` event, waits for user answers via `prompt_response`
 - `ExitPlanMode` - In plan mode, emits `exit_plan_mode_request`, requires user approval
 

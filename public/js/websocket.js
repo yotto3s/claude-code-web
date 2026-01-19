@@ -160,7 +160,11 @@ class WebSocketClient {
         break;
 
       case 'terminal_exit':
-        this.emit('terminal_exit', { terminalId: msg.terminalId, exitCode: msg.exitCode, signal: msg.signal });
+        this.emit('terminal_exit', {
+          terminalId: msg.terminalId,
+          exitCode: msg.exitCode,
+          signal: msg.signal,
+        });
         break;
 
       case 'terminal_closed':
@@ -172,7 +176,7 @@ class WebSocketClient {
           requestId: msg.requestId,
           toolUseId: msg.toolUseId,
           toolName: msg.toolName,
-          input: msg.input
+          input: msg.input,
         });
         break;
 
@@ -181,7 +185,7 @@ class WebSocketClient {
           requestId: msg.requestId,
           toolName: msg.toolName,
           toolInput: msg.toolInput,
-          toolUseId: msg.toolUseId
+          toolUseId: msg.toolUseId,
         });
         break;
 
@@ -189,11 +193,15 @@ class WebSocketClient {
         this.emit('mode_changed', { mode: msg.mode });
         break;
 
+      case 'web_search_changed':
+        this.emit('web_search_changed', { enabled: msg.enabled });
+        break;
+
       case 'exit_plan_mode_request':
         this.emit('exit_plan_mode_request', {
           requestId: msg.requestId,
           toolUseId: msg.toolUseId,
-          input: msg.input
+          input: msg.input,
         });
         break;
 
@@ -202,7 +210,7 @@ class WebSocketClient {
           taskId: msg.taskId,
           description: msg.description,
           agentType: msg.agentType,
-          startTime: msg.startTime
+          startTime: msg.startTime,
         });
         break;
 
@@ -213,7 +221,7 @@ class WebSocketClient {
           summary: msg.summary,
           outputFile: msg.outputFile,
           description: msg.description,
-          agentType: msg.agentType
+          agentType: msg.agentType,
         });
         break;
 
@@ -225,7 +233,7 @@ class WebSocketClient {
         this.emit('tool_use', {
           id: msg.id,
           name: msg.name,
-          input: msg.input
+          input: msg.input,
         });
         break;
 
@@ -306,7 +314,7 @@ class WebSocketClient {
 
   off(event, handler) {
     if (this.handlers[event]) {
-      this.handlers[event] = this.handlers[event].filter(h => h !== handler);
+      this.handlers[event] = this.handlers[event].filter((h) => h !== handler);
     }
     return this;
   }

@@ -7,7 +7,7 @@ class App {
     this.terminalManager = null;
     this.isProcessing = false;
     this.currentTool = null;
-    this.currentBrowserPath = null;  // Will be set after fetching home
+    this.currentBrowserPath = null; // Will be set after fetching home
     this.currentSessionId = null;
     this.currentSessionName = null;
     this.currentWorkingDirectory = null;
@@ -18,8 +18,11 @@ class App {
     this.modeConfig = {
       default: { icon: '&#128221;', label: 'Default', class: '' },
       acceptEdits: { icon: '&#10003;', label: 'Accept Edits', class: 'mode-accept-edits' },
-      plan: { icon: '&#128203;', label: 'Plan Mode', class: 'mode-plan' }
+      plan: { icon: '&#128203;', label: 'Plan Mode', class: 'mode-plan' },
     };
+
+    // Web search toggle state
+    this.webSearchEnabled = false;
 
     // Child agent tracking
     this.activeAgents = new Map(); // taskId -> agent info
@@ -74,11 +77,13 @@ class App {
       logoutBtn: document.getElementById('logout-btn'),
       // Mode toggle button
       modeToggleBtn: document.getElementById('mode-toggle-btn'),
+      // Web search toggle button
+      webSearchToggleBtn: document.getElementById('web-search-toggle-btn'),
       // Agent activity panel elements
       agentsToggleBtn: document.getElementById('agents-toggle-btn'),
       agentsPanel: document.getElementById('agents-panel'),
       agentsList: document.getElementById('agents-list'),
-      agentsCloseBtn: document.getElementById('agents-close-btn')
+      agentsCloseBtn: document.getElementById('agents-close-btn'),
     };
 
     // Setup event listeners
@@ -173,6 +178,11 @@ class App {
       this.elements.modeToggleBtn.addEventListener('click', () => this.cycleMode());
     }
 
+    // Web search toggle button
+    if (this.elements.webSearchToggleBtn) {
+      this.elements.webSearchToggleBtn.addEventListener('click', () => this.toggleWebSearch());
+    }
+
     // Agent activity panel toggle
     if (this.elements.agentsToggleBtn) {
       this.elements.agentsToggleBtn.addEventListener('click', () => this.toggleAgentsPanel());
@@ -190,9 +200,11 @@ class App {
 
     // Close agents panel when clicking outside
     document.addEventListener('click', (e) => {
-      if (this.elements.agentsPanel.classList.contains('show') &&
-          !this.elements.agentsPanel.contains(e.target) &&
-          !this.elements.agentsToggleBtn.contains(e.target)) {
+      if (
+        this.elements.agentsPanel.classList.contains('show') &&
+        !this.elements.agentsPanel.contains(e.target) &&
+        !this.elements.agentsToggleBtn.contains(e.target)
+      ) {
         this.closeAgentsPanel();
       }
     });
@@ -258,6 +270,9 @@ class App {
 
     // Mode changed handler
     this.ws.on('mode_changed', (data) => this.onModeChanged(data));
+
+    // Web search changed handler
+    this.ws.on('web_search_changed', (data) => this.onWebSearchChanged(data));
 
     // Exit plan mode request handler
     this.ws.on('exit_plan_mode_request', (data) => this.onExitPlanModeRequest(data));
@@ -341,6 +356,11 @@ class App {
       this.setModeUI(data.session.mode);
     } else {
       this.syncModeWithServer();
+    }
+
+    // Sync web search state from session
+    if (typeof data.session.webSearchEnabled === 'boolean') {
+      this.setWebSearchUI(data.session.webSearchEnabled);
     }
 
     this.ws.listSessions();
@@ -476,7 +496,7 @@ class App {
     this.agentTools.get(agentId).push({
       name: toolName,
       input: toolInput,
-      time: new Date()
+      time: new Date(),
     });
 
     // Re-render if panel is open to show the new tool
@@ -568,7 +588,9 @@ class App {
             <span>${session.historyLength} messages</span>
           </span>
         </div>
-        ${isCurrentSession ? `
+        ${
+          isCurrentSession
+            ? `
         <button class="session-reset-btn" title="Reset session (delete and create new)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M23 4v6h-6"></path>
@@ -576,14 +598,16 @@ class App {
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
           </svg>
         </button>
-        ` : `
+        `
+            : `
         <button class="session-delete-btn" title="Delete session">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
           </svg>
         </button>
-        `}
+        `
+        }
       `;
 
       // Click on item to switch session
@@ -728,7 +752,8 @@ class App {
   // Session picker methods
   showSessionPicker() {
     this.elements.sessionPicker.classList.add('show');
-    this.elements.sessionPickerList.innerHTML = '<div class="session-picker-loading">Loading sessions...</div>';
+    this.elements.sessionPickerList.innerHTML =
+      '<div class="session-picker-loading">Loading sessions...</div>';
   }
 
   hideSessionPicker() {
@@ -739,7 +764,8 @@ class App {
     const list = this.elements.sessionPickerList;
 
     if (sessions.length === 0) {
-      list.innerHTML = '<div class="session-picker-empty">No existing sessions.<br>Create a new session to get started.</div>';
+      list.innerHTML =
+        '<div class="session-picker-empty">No existing sessions.<br>Create a new session to get started.</div>';
       return;
     }
 
@@ -934,7 +960,7 @@ class App {
   updateAgentsElapsedTime() {
     const timeElements = this.elements.agentsList.querySelectorAll('.agent-elapsed-time');
     const now = Date.now();
-    timeElements.forEach(el => {
+    timeElements.forEach((el) => {
       const startTime = parseInt(el.dataset.startTime, 10);
       if (startTime) {
         const elapsed = Math.floor((now - startTime) / 1000);
@@ -959,7 +985,7 @@ class App {
       description: data.description,
       agentType: data.agentType,
       startTime: data.startTime,
-      status: 'running'
+      status: 'running',
     });
 
     // Initialize tools array for this agent
@@ -984,7 +1010,7 @@ class App {
         description: data.description,
         agentType: data.agentType,
         status: data.status,
-        summary: data.summary
+        summary: data.summary,
       });
     }
 
@@ -1047,26 +1073,32 @@ class App {
       // Build tools HTML
       let toolsHtml = '';
       if (toolsCount > 0) {
-        const toolsListHtml = tools.map(tool => {
-          let inputDisplay = '';
-          if (tool.input) {
-            if (tool.input.command) {
-              inputDisplay = this.escapeHtml(tool.input.command.substring(0, 60)) + (tool.input.command.length > 60 ? '...' : '');
-            } else if (tool.input.file_path) {
-              inputDisplay = this.escapeHtml(tool.input.file_path);
-            } else if (tool.input.pattern) {
-              inputDisplay = this.escapeHtml(tool.input.pattern);
-            } else if (tool.input.query) {
-              inputDisplay = this.escapeHtml(tool.input.query.substring(0, 40)) + (tool.input.query.length > 40 ? '...' : '');
+        const toolsListHtml = tools
+          .map((tool) => {
+            let inputDisplay = '';
+            if (tool.input) {
+              if (tool.input.command) {
+                inputDisplay =
+                  this.escapeHtml(tool.input.command.substring(0, 60)) +
+                  (tool.input.command.length > 60 ? '...' : '');
+              } else if (tool.input.file_path) {
+                inputDisplay = this.escapeHtml(tool.input.file_path);
+              } else if (tool.input.pattern) {
+                inputDisplay = this.escapeHtml(tool.input.pattern);
+              } else if (tool.input.query) {
+                inputDisplay =
+                  this.escapeHtml(tool.input.query.substring(0, 40)) +
+                  (tool.input.query.length > 40 ? '...' : '');
+              }
             }
-          }
-          return `
+            return `
             <div class="agent-tool-item">
               <span class="agent-tool-name">${this.escapeHtml(tool.name)}</span>
               ${inputDisplay ? `<span class="agent-tool-input">${inputDisplay}</span>` : ''}
             </div>
           `;
-        }).join('');
+          })
+          .join('');
 
         toolsHtml = `
           <div class="agent-tools-container">
@@ -1123,11 +1155,16 @@ class App {
 
   getStatusText(status) {
     switch (status) {
-      case 'running': return 'Running';
-      case 'completed': return 'Completed';
-      case 'failed': return 'Failed';
-      case 'stopped': return 'Stopped';
-      default: return 'Running';
+      case 'running':
+        return 'Running';
+      case 'completed':
+        return 'Completed';
+      case 'failed':
+        return 'Failed';
+      case 'stopped':
+        return 'Stopped';
+      default:
+        return 'Running';
     }
   }
 
@@ -1195,6 +1232,38 @@ class App {
     }
   }
 
+  // Web Search Toggle Methods
+  toggleWebSearch() {
+    const newValue = !this.webSearchEnabled;
+
+    // Send to server
+    if (this.ws && this.ws.isConnected() && this.currentSessionId) {
+      this.ws.send('set_web_search', { enabled: newValue });
+    }
+  }
+
+  setWebSearchUI(enabled) {
+    this.webSearchEnabled = Boolean(enabled);
+    const btn = this.elements.webSearchToggleBtn;
+
+    if (btn) {
+      // Update button active state
+      btn.classList.toggle('toggle-active', this.webSearchEnabled);
+      btn.title = `Web Search: ${this.webSearchEnabled ? 'On' : 'Off'}`;
+
+      // Update label
+      const label = btn.querySelector('.toggle-label');
+      if (label) {
+        label.textContent = this.webSearchEnabled ? 'web on' : 'web';
+      }
+    }
+  }
+
+  onWebSearchChanged(data) {
+    // Server confirmed web search change
+    this.setWebSearchUI(data.enabled);
+  }
+
   onExitPlanModeRequest(data) {
     // Remove tool indicator since we're showing a prompt
     this.chatUI.removeToolIndicator();
@@ -1210,7 +1279,7 @@ class App {
     try {
       const response = await fetch('/api/logout', {
         method: 'POST',
-        credentials: 'include'
+        credentials: 'include',
       });
 
       if (response.ok) {
@@ -1277,7 +1346,7 @@ class App {
 
   onSessionReset(data) {
     // Clear chat and update to new session
-    this.chat.clear();
+    this.chatUI.clearMessages();
     this.currentSessionId = data.session.id;
     this.currentSessionName = data.session.name;
     this.currentWorkingDirectory = data.session.workingDirectory;
@@ -1316,7 +1385,8 @@ class App {
       return;
     }
 
-    const confirmMessage = 'Are you sure you want to reset this session?\n\nThis will delete all messages and create a new session in the same directory.';
+    const confirmMessage =
+      'Are you sure you want to reset this session?\n\nThis will delete all messages and create a new session in the same directory.';
     if (!confirm(confirmMessage)) {
       return;
     }

@@ -55,7 +55,7 @@ class ChatUI {
       element: msg,
       content: '',
       bubble: msg.querySelector('.message-bubble'),
-      contentDiv: msg.querySelector('.message-content')
+      contentDiv: msg.querySelector('.message-content'),
     };
 
     this.scrollToBottom();
@@ -70,8 +70,9 @@ class ChatUI {
     this.currentAssistantMessage.content += text;
 
     // Render markdown
-    this.currentAssistantMessage.contentDiv.innerHTML =
-      renderMarkdown(this.currentAssistantMessage.content);
+    this.currentAssistantMessage.contentDiv.innerHTML = renderMarkdown(
+      this.currentAssistantMessage.content
+    );
 
     this.scrollToBottom();
   }
@@ -81,13 +82,14 @@ class ChatUI {
       // Check if message has any content
       if (this.currentAssistantMessage.content) {
         // Final render
-        this.currentAssistantMessage.contentDiv.innerHTML =
-          renderMarkdown(this.currentAssistantMessage.content);
+        this.currentAssistantMessage.contentDiv.innerHTML = renderMarkdown(
+          this.currentAssistantMessage.content
+        );
 
         this.messages.push({
           role: 'assistant',
           content: this.currentAssistantMessage.content,
-          element: this.currentAssistantMessage.element
+          element: this.currentAssistantMessage.element,
         });
       } else {
         // Remove empty message element from DOM
@@ -134,7 +136,9 @@ class ChatUI {
         // Bash command
         inputDisplay = `<code class="tool-command">${escapeHtml(toolInput.command)}</code>`;
         if (toolInput.description) {
-          inputDisplay = `<span class="tool-description">${escapeHtml(toolInput.description)}</span>` + inputDisplay;
+          inputDisplay =
+            `<span class="tool-description">${escapeHtml(toolInput.description)}</span>` +
+            inputDisplay;
         }
       } else if (toolInput.file_path) {
         // File operations (Read, Write, Edit)
@@ -267,9 +271,8 @@ class ChatUI {
         this.container.appendChild(msg);
         this.messages.push({ role: 'user', content: entry.content, element: msg });
       } else if (entry.role === 'assistant') {
-        const content = typeof entry.content === 'string'
-          ? entry.content
-          : JSON.stringify(entry.content);
+        const content =
+          typeof entry.content === 'string' ? entry.content : JSON.stringify(entry.content);
         const msg = this.createMessageElement('assistant', content);
         this.container.appendChild(msg);
         this.messages.push({ role: 'assistant', content, element: msg });
