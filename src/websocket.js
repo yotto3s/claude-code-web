@@ -202,11 +202,21 @@ function handleCreateSession(ws, msg, setSession) {
 }
 
 function handleJoinSession(ws, msg, setSession) {
-  const session = sessionManager.getSession(msg.sessionId);
+  let session = sessionManager.getSession(msg.sessionId);
 
   if (!session) {
     sendError(ws, 'Session not found');
     return;
+  }
+
+  // Recover session if it doesn't have an active process (was persisted)
+  if (!session.process) {
+    session = sessionManager.recoverSession(msg.sessionId);
+    if (!session) {
+      sendError(ws, 'Failed to recover session');
+      return;
+    }
+    console.log(`Recovered persisted session ${session.id}`);
   }
 
   setSession(session);
@@ -220,7 +230,8 @@ function handleJoinSession(ws, msg, setSession) {
       name: session.name,
       createdAt: session.createdAt,
       workingDirectory: session.workingDirectory,
-      mode: session.mode || 'default'
+      mode: session.mode || 'default',
+      recovered: session.persisted || false // Let client know this was recovered
     },
     history: session.history
   });
@@ -568,8 +579,9 @@ function handleSetMode(ws, msg, getCurrentSession) {
     return;
   }
 
-  // Store mode on session
+  // Store mode on session and persist to database
   session.mode = msg.mode;
+  sessionManager.setSessionMode(session.id, msg.mode);
 
   // Set mode on claude process
   if (session.process && typeof session.process.setMode === 'function') {

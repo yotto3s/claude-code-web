@@ -12,6 +12,7 @@ const http = require('http');
 const httpProxy = require('http-proxy');
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
 const cookieParser = require('cookie-parser');
 const WebSocket = require('ws');
 
@@ -31,8 +32,50 @@ const proxy = httpProxy.createProxyServer({
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
-// Session secret for signing cookies
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+// Session secret persistence - load from file or create new one
+const SESSION_SECRET_PATH = '/data/.session-secret';
+
+function loadOrCreateSessionSecret() {
+  // First check environment variable
+  if (process.env.SESSION_SECRET) {
+    console.log('Using session secret from environment variable');
+    return process.env.SESSION_SECRET;
+  }
+
+  // Try to read from persistent file
+  try {
+    if (fs.existsSync(SESSION_SECRET_PATH)) {
+      const secret = fs.readFileSync(SESSION_SECRET_PATH, 'utf8').trim();
+      if (secret && secret.length >= 32) {
+        console.log('Loaded session secret from file');
+        return secret;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not read session secret file:', err.message);
+  }
+
+  // Generate new secret
+  const newSecret = crypto.randomBytes(32).toString('hex');
+
+  // Try to persist it
+  try {
+    // Ensure directory exists
+    const secretDir = path.dirname(SESSION_SECRET_PATH);
+    if (!fs.existsSync(secretDir)) {
+      fs.mkdirSync(secretDir, { recursive: true });
+    }
+    fs.writeFileSync(SESSION_SECRET_PATH, newSecret, { mode: 0o600 });
+    console.log('Generated and saved new session secret');
+  } catch (err) {
+    console.warn('Could not save session secret:', err.message);
+    console.log('Using ephemeral session secret (sessions will not persist across restarts)');
+  }
+
+  return newSecret;
+}
+
+const SESSION_SECRET = loadOrCreateSessionSecret();
 
 // Active user sessions: username -> { token, userInfo }
 const userSessions = new Map();

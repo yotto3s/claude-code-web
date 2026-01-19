@@ -101,7 +101,7 @@ docker run -d \
   -p ${GATEWAY_PORT}:3000 \
   -e HOST_SERVER_IP=${HOST_SERVER_IP} \
   -e HOST_SERVER_PORT=${HOST_PORT} \
-  -e SESSION_SECRET="${SESSION_SECRET:-$(openssl rand -hex 32)}" \
+  -v "$(pwd)/data:/data:rw" \
   -v /etc/passwd:/etc/passwd:ro \
   -v /etc/shadow:/etc/shadow:ro \
   -v /etc/group:/etc/group:ro \
