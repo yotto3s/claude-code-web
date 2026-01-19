@@ -1,5 +1,6 @@
 // Terminal Manager using xterm.js
 
+// eslint-disable-next-line no-unused-vars -- Used globally by app.js
 class TerminalManager {
   constructor() {
     this.terminals = new Map(); // Store multiple terminal instances
@@ -314,7 +315,7 @@ class TerminalManager {
   }
 
   destroy() {
-    for (const [terminalId, terminalData] of this.terminals) {
+    for (const [_terminalId, terminalData] of this.terminals) {
       if (terminalData.terminal) {
         terminalData.terminal.dispose();
       }

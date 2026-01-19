@@ -16,7 +16,6 @@
 const pty = require('node-pty');
 const EventEmitter = require('events');
 const os = require('os');
-const path = require('path');
 
 /**
  * Represents a single PTY terminal session.
@@ -105,7 +104,7 @@ class TerminalSession extends EventEmitter {
     if (this.ptyProcess) {
       try {
         this.ptyProcess.kill();
-      } catch (err) {
+      } catch {
         // Already dead
       }
       this.ptyProcess = null;
@@ -202,7 +201,7 @@ class TerminalManager {
       this.cleanupTimer = null;
     }
 
-    for (const [sessionId, terminal] of this.terminals.entries()) {
+    for (const [_sessionId, terminal] of this.terminals.entries()) {
       terminal.destroy();
     }
     this.terminals.clear();

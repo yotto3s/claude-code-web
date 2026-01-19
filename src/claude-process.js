@@ -14,7 +14,6 @@
 
 const { query } = require('@anthropic-ai/claude-agent-sdk');
 const EventEmitter = require('events');
-const path = require('path');
 
 /**
  * ClaudeProcess wraps the Claude Agent SDK query() function.

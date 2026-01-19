@@ -21,7 +21,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
       errorEl.textContent = data.error || 'Login failed';
       errorEl.style.display = 'block';
     }
-  } catch (err) {
+  } catch {
     errorEl.textContent = 'Connection error';
     errorEl.style.display = 'block';
   }

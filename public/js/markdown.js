@@ -8,7 +8,7 @@ marked.setOptions({
     if (lang && hljs.getLanguage(lang)) {
       try {
         return hljs.highlight(code, { language: lang }).value;
-      } catch (err) {}
+      } catch {}
     }
     return hljs.highlightAuto(code).value;
   },
@@ -27,7 +27,7 @@ renderer.code = function (code, language) {
     } else {
       highlighted = hljs.highlightAuto(code).value;
     }
-  } catch (err) {
+  } catch {
     highlighted = escapeHtml(code);
   }
 

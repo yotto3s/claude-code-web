@@ -422,7 +422,7 @@ class App {
     this.updateSendButton();
   }
 
-  onResult(data) {
+  onResult(_data) {
     // Final result received
     this.chatUI.finishAssistantMessage();
     this.isProcessing = false;
@@ -1339,7 +1339,7 @@ class App {
     this.ws.listSessions();
   }
 
-  onSessionDeleted(data) {
+  onSessionDeleted(_data) {
     // Refresh session lists
     this.ws.listSessions();
   }

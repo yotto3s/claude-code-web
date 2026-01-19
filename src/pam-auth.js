@@ -6,7 +6,6 @@
  */
 
 const fs = require('fs');
-const crypto = require('crypto');
 const { execSync } = require('child_process');
 
 /**

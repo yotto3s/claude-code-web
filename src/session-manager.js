@@ -458,7 +458,7 @@ class SessionManager {
   terminateAll() {
     // Only terminate processes, but DON'T deactivate sessions in database
     // Sessions should persist across server restarts so users can rejoin them
-    for (const [id, session] of this.sessions) {
+    for (const [_id, session] of this.sessions) {
       if (session.process) {
         session.process.terminate();
       }

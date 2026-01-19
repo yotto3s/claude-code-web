@@ -166,7 +166,7 @@ app.post('/api/logout', (req, res) => {
 });
 
 // Main chat interface - requires auth
-app.get('/', (req, res, next) => {
+app.get('/', (req, res, _next) => {
   // If users are configured (not single-user mode), check auth
   if (!SINGLE_USER_MODE && USERS.size > 0) {
     const username = verifySessionToken(req.cookies.session);

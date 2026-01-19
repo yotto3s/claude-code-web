@@ -73,7 +73,7 @@ class HostServerManager {
    * Get the target (IP and port) for proxying requests
    * Always returns the same host server
    */
-  async getTarget(username) {
+  async getTarget(_username) {
     return {
       ip: this.hostIP,
       port: this.hostPort,

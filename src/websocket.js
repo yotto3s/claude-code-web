@@ -110,7 +110,7 @@ function setupWebSocket(server) {
       try {
         const msg = JSON.parse(data.toString());
         await handleMessage(ws, msg, { getCurrentSession: () => currentSession, setSession });
-      } catch (err) {
+      } catch {
         sendError(ws, 'Invalid message format');
       }
     });

@@ -22,9 +22,8 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const cookieParser = require('cookie-parser');
-const WebSocket = require('ws');
 
-const { authenticate, getUserInfo } = require('./src/pam-auth');
+const { authenticate } = require('./src/pam-auth');
 const { hostServerManager } = require('./src/host-server-manager');
 
 const app = express();
