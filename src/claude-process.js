@@ -1,4 +1,4 @@
-const { spawn } = require('child_process');
+const { query } = require('@anthropic-ai/claude-agent-sdk');
 const EventEmitter = require('events');
 const path = require('path');
 
@@ -6,125 +6,99 @@ class ClaudeProcess extends EventEmitter {
   constructor(workingDirectory) {
     super();
     this.workingDirectory = workingDirectory || process.cwd();
-    this.process = null;
-    this.buffer = '';
-    this.isProcessing = false;
-    this.currentMessageId = null;
+    this.queryInstance = null;
+    this.messageQueue = [];
+    this.messageResolver = null;
     this.sessionId = null;
-    this.activeToolBlocks = new Map(); // index -> { name, id, inputBuffer }
+    this.pendingPermissions = new Map(); // requestId -> {resolve, reject}
+    this.isProcessing = false;
   }
 
-  start() {
-    if (this.process) {
-      return;
-    }
+  async start() {
+    // Create async generator for streaming input
+    const messageGenerator = this.createMessageGenerator();
 
-    // Build environment for Claude process
-    const env = {
-      ...process.env,
-      // Ensure Claude doesn't try to use interactive features
-      TERM: 'dumb',
-      CI: 'true',
-      // Always ensure Claude knows where to find config
-      CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR ||
-                         path.join(process.env.HOME || '/home/node', '.claude')
-    };
-
-    // Build spawn options
-    const spawnOptions = {
-      cwd: this.workingDirectory,
-      env,
-      stdio: ['pipe', 'pipe', 'pipe']
-    };
-
-    // Build args for claude CLI with streaming JSON I/O
-    const args = [
-      '-p',
-      '--input-format', 'stream-json',
-      '--output-format', 'stream-json',
-      '--verbose',
-      '--permission-mode', 'default',
-      '--permission-prompt-tool', 'stdio',
-      '--add-dir', this.workingDirectory
-    ];
-
-    // Resume previous session if we have a sessionId
-    if (this.sessionId) {
-      args.push('--resume', this.sessionId);
-    }
-
-    this.process = spawn('claude', args, spawnOptions);
-
-    this.process.stdout.on('data', (data) => {
-      this.handleOutput(data.toString());
-    });
-
-    this.process.stderr.on('data', (data) => {
-      const text = data.toString();
-      // Claude sometimes writes status messages to stderr
-      this.emit('stderr', text);
-    });
-
-    this.process.on('error', (err) => {
-      this.emit('error', { message: err.message });
-    });
-
-    this.process.on('close', (code) => {
-      this.process = null;
-      this.emit('close', code);
-    });
-
-    this.emit('started');
-  }
-
-  handleOutput(data) {
-    // Add data to buffer
-    this.buffer += data;
-
-    // Process complete JSON lines
-    const lines = this.buffer.split('\n');
-    this.buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-
-      try {
-        const parsed = JSON.parse(line);
-        this.handleMessage(parsed);
-      } catch (err) {
-        // Not valid JSON, might be plain text output
-        this.emit('text', line);
+    // Start the SDK query with canUseTool callback
+    this.queryInstance = query({
+      prompt: messageGenerator,
+      options: {
+        cwd: this.workingDirectory,
+        permissionMode: 'default',
+        canUseTool: async (toolName, input, options) => {
+          return this.handlePermissionRequest(toolName, input, options);
+        }
       }
+    });
+
+    // Process streaming responses
+    this.processResponses();
+    this.emit('started');
+    this.emit('ready');
+  }
+
+  async *createMessageGenerator() {
+    while (true) {
+      // Wait for a message to be queued
+      const message = await new Promise(resolve => {
+        if (this.messageQueue.length > 0) {
+          resolve(this.messageQueue.shift());
+        } else {
+          this.messageResolver = resolve;
+        }
+      });
+
+      if (message === null) break; // Termination signal
+
+      // SDKUserMessage format requires type, message, parent_tool_use_id, and session_id
+      yield {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: message
+        },
+        parent_tool_use_id: null,
+        session_id: this.sessionId || 'pending'
+      };
     }
   }
 
-  handleMessage(msg) {
-    // Handle different message types from Claude's stream-json output
+  async processResponses() {
+    try {
+      for await (const message of this.queryInstance) {
+        this.handleSDKMessage(message);
+      }
+    } catch (err) {
+      this.emit('error', { message: err.message });
+    }
+  }
+
+  handleSDKMessage(msg) {
     switch (msg.type) {
       case 'system':
-        // Capture session ID from init message
-        if (msg.subtype === 'init' && msg.session_id) {
+        if (msg.subtype === 'init') {
           this.sessionId = msg.session_id;
-          this.emit('ready');
         }
         this.emit('system', msg);
         break;
 
       case 'assistant':
-        // Full assistant response (in -p mode)
-        this.currentMessageId = msg.message?.id;
         this.emit('message_start', msg.message);
-
-        // Extract and emit text content and detect tool_use
         if (msg.message?.content) {
           for (const block of msg.message.content) {
             if (block.type === 'text') {
               this.emit('chunk', { index: 0, text: block.text });
-            } else if (block.type === 'tool_use' && block.name === 'AskUserQuestion') {
-              // Emit prompt event for AskUserQuestion tool
-              this.emit('prompt', {
-                toolUseId: block.id,
-                toolName: block.name,
+            } else if (block.type === 'tool_use') {
+              // Handle AskUserQuestion tool
+              if (block.name === 'AskUserQuestion') {
+                this.emit('prompt', {
+                  toolUseId: block.id,
+                  toolName: block.name,
+                  input: block.input
+                });
+              }
+              this.emit('tool_use', {
+                id: block.id,
+                name: block.name,
                 input: block.input
               });
             }
@@ -132,212 +106,107 @@ class ClaudeProcess extends EventEmitter {
         }
         break;
 
-      case 'tool_use':
-        // Handle tool_use as top-level message (stream-json format)
-        if (msg.name === 'AskUserQuestion') {
-          this.emit('prompt', {
-            toolUseId: msg.id,
-            toolName: msg.name,
-            input: msg.input
-          });
-        }
-        // Emit generic tool_use event for other tools
-        this.emit('tool_use', {
-          id: msg.id,
-          name: msg.name,
-          input: msg.input
-        });
-        break;
-
-      case 'content_block_start':
-        // Track tool_use blocks for accumulating streamed input
-        if (msg.content_block?.type === 'tool_use') {
-          this.activeToolBlocks.set(msg.index, {
-            name: msg.content_block.name,
-            id: msg.content_block.id,
-            inputBuffer: ''
-          });
-        }
-        this.emit('content_start', {
-          index: msg.index,
-          contentBlock: msg.content_block
-        });
-        break;
-
-      case 'content_block_delta':
-        // Streaming content
-        if (msg.delta?.type === 'text_delta') {
-          this.emit('chunk', {
-            index: msg.index,
-            text: msg.delta.text
-          });
-        } else if (msg.delta?.type === 'input_json_delta') {
-          // Accumulate JSON input for tool blocks
-          const toolBlock = this.activeToolBlocks.get(msg.index);
-          if (toolBlock) {
-            toolBlock.inputBuffer += msg.delta.partial_json;
-          }
-          this.emit('tool_input_delta', {
-            index: msg.index,
-            json: msg.delta.partial_json
-          });
-        }
-        break;
-
-      case 'content_block_stop':
-        // Check if this is an AskUserQuestion tool completion
-        const completedTool = this.activeToolBlocks.get(msg.index);
-        if (completedTool && completedTool.name === 'AskUserQuestion') {
-          try {
-            const input = JSON.parse(completedTool.inputBuffer);
-            this.emit('prompt', {
-              toolUseId: completedTool.id,
-              toolName: completedTool.name,
-              input
-            });
-          } catch (err) {
-            console.error('Failed to parse AskUserQuestion input:', err);
-          }
-        }
-        // Clean up tool block
-        this.activeToolBlocks.delete(msg.index);
-        this.emit('content_stop', { index: msg.index });
-        break;
-
-      case 'message_start':
-        this.emit('message_start', msg.message);
-        break;
-
-      case 'message_delta':
-        if (msg.delta?.stop_reason) {
-          this.emit('message_delta', {
-            stopReason: msg.delta.stop_reason,
-            usage: msg.usage
-          });
-        }
-        break;
-
-      case 'message_stop':
-        this.isProcessing = false;
-        this.emit('complete', { messageId: this.currentMessageId });
-        break;
-
       case 'result':
-        // Final result from Claude
         this.isProcessing = false;
-        this.emit('complete', { messageId: this.currentMessageId });
+        this.emit('complete', { messageId: msg.uuid });
         this.emit('result', msg);
         break;
-
-      case 'error':
-        this.emit('error', {
-          message: msg.error?.message || 'Unknown error',
-          code: msg.error?.code
-        });
-        break;
-
-      case 'control_request':
-        // Permission prompt from Claude CLI
-        this.emit('permission_request', msg);
-        break;
-
-      default:
-        // Pass through unknown message types
-        this.emit('message', msg);
     }
   }
 
-  sendMessage(content) {
-    if (!this.process || !this.process.stdin.writable) {
-      this.emit('error', { message: 'Process not running' });
-      return false;
-    }
+  async handlePermissionRequest(toolName, input, options) {
+    // Generate unique request ID
+    const requestId = `perm_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    this.isProcessing = true;
-
-    // Format message for stream-json input
-    const msg = JSON.stringify({
-      type: 'user',
-      message: {
-        role: 'user',
-        content: content
+    // Emit permission request to WebSocket clients
+    this.emit('permission_request', {
+      request_id: requestId,
+      request: {
+        tool_name: toolName,
+        input: input,
+        tool_use_id: options?.toolUseID
       }
     });
 
-    this.process.stdin.write(msg + '\n');
+    // Wait for user response (with 60s timeout)
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingPermissions.delete(requestId);
+        resolve({ behavior: 'deny', message: 'Permission request timed out' });
+      }, 60000);
+
+      this.pendingPermissions.set(requestId, {
+        resolve: (result) => {
+          clearTimeout(timeout);
+          this.pendingPermissions.delete(requestId);
+          resolve(result);
+        },
+        reject
+      });
+    });
+  }
+
+  sendMessage(content) {
+    this.isProcessing = true;
+
+    if (this.messageResolver) {
+      this.messageResolver(content);
+      this.messageResolver = null;
+    } else {
+      this.messageQueue.push(content);
+    }
     return true;
   }
 
-  cancel() {
-    if (this.process && this.isProcessing) {
-      // Send SIGINT to cancel current operation
-      this.process.kill('SIGINT');
+  sendToolResponse(toolUseId, response) {
+    // Note: With the SDK, tool responses are handled through the canUseTool callback
+    // This method is kept for compatibility with AskUserQuestion responses
+    // The SDK handles these internally when using streaming input mode
+    console.log('sendToolResponse called:', toolUseId, response);
+    return true;
+  }
+
+  sendControlResponse(requestId, decision, toolInput = null) {
+    const pending = this.pendingPermissions.get(requestId);
+    if (!pending) {
+      console.log('sendControlResponse: No pending permission for requestId:', requestId);
+      return false;
+    }
+
+    if (decision === 'allow' || decision === 'allow_all') {
+      pending.resolve({
+        behavior: 'allow',
+        updatedInput: toolInput || undefined
+      });
+    } else {
+      pending.resolve({
+        behavior: 'deny',
+        message: 'User denied permission'
+      });
+    }
+    return true;
+  }
+
+  async cancel() {
+    if (this.queryInstance && this.isProcessing) {
+      await this.queryInstance.interrupt();
       this.isProcessing = false;
       this.emit('cancelled');
     }
   }
 
-  sendToolResponse(toolUseId, response) {
-    if (!this.process || !this.process.stdin.writable) {
-      this.emit('error', { message: 'Process not running' });
-      return false;
-    }
-
-    // Send tool_result message to Claude CLI stdin
-    const msg = JSON.stringify({
-      type: 'tool_result',
-      tool_use_id: toolUseId,
-      content: JSON.stringify(response)
-    });
-
-    this.process.stdin.write(msg + '\n');
-    return true;
-  }
-
-  sendControlResponse(requestId, decision, toolInput = null) {
-    if (!this.process || !this.process.stdin.writable) {
-      this.emit('error', { message: 'Process not running' });
-      return false;
-    }
-
-    // Build the inner response based on decision
-    let innerResponse;
-    if (decision === 'allow' || decision === 'allow_all') {
-      innerResponse = { behavior: 'allow' };
-      // Only include updatedInput if we have actual modifications
-      if (toolInput && Object.keys(toolInput).length > 0) {
-        innerResponse.updatedInput = toolInput;
-      }
-    } else {
-      innerResponse = {
-        behavior: 'deny',
-        message: 'User denied permission'
-      };
-    }
-
-    // Wrap in control_response format
-    const msg = JSON.stringify({
-      type: 'control_response',
-      request_id: requestId,
-      response: {
-        subtype: 'success',
-        response: innerResponse
-      }
-    });
-
-    this.process.stdin.write(msg + '\n');
-    return true;
-  }
-
   terminate() {
-    if (this.process) {
-      this.process.kill('SIGTERM');
-      this.process = null;
+    // Signal termination to message generator
+    if (this.messageResolver) {
+      this.messageResolver(null);
+    } else {
+      this.messageQueue.push(null);
     }
+    this.queryInstance = null;
   }
 
   isRunning() {
-    return this.process !== null;
+    return this.queryInstance !== null;
   }
 }
 

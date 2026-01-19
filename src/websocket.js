@@ -399,24 +399,29 @@ function handlePromptResponse(ws, msg, getCurrentSession) {
 }
 
 function handlePermissionResponse(ws, msg, getCurrentSession) {
+  console.log('handlePermissionResponse called with:', JSON.stringify(msg));
   const session = getCurrentSession();
 
   if (!session) {
+    console.log('No active session for permission response');
     sendError(ws, 'No active session');
     return;
   }
 
   if (!msg.requestId || !msg.decision) {
+    console.log('Missing requestId or decision:', msg.requestId, msg.decision);
     sendError(ws, 'Request ID and decision are required');
     return;
   }
 
+  console.log('Calling sendControlResponse with:', msg.requestId, msg.decision);
   const success = session.process.sendControlResponse(
     msg.requestId,
     msg.decision,
-    msg.toolInput || {}  // Pass the tool input for "updatedInput"
+    msg.toolInput || null  // Only pass if we have actual modifications
   );
 
+  console.log('sendControlResponse returned:', success);
   if (!success) {
     sendError(ws, 'Failed to send permission response');
   }
