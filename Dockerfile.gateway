@@ -15,8 +15,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Remove node-pty from dependencies (not needed in gateway)
-RUN node -e "const p=require('./package.json'); delete p.dependencies['node-pty']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2))"
+# Remove native modules not needed in gateway (node-pty, better-sqlite3, claude-agent-sdk)
+RUN node -e "const p=require('./package.json'); delete p.dependencies['node-pty']; delete p.dependencies['better-sqlite3']; delete p.dependencies['@anthropic-ai/claude-agent-sdk']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2))"
 
 # Install dependencies
 RUN npm install --production

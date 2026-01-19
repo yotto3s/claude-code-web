@@ -30,6 +30,8 @@ class ClaudeProcess extends EventEmitter {
     const messageGenerator = this.createMessageGenerator();
 
     // Start the SDK query with canUseTool callback
+    // Note: permissionMode is set to 'default' here, but we implement dynamic mode
+    // handling in canUseTool since modes can change mid-session
     this.queryInstance = query({
       prompt: messageGenerator,
       options: {
@@ -43,6 +45,20 @@ class ClaudeProcess extends EventEmitter {
             return this.handleAskUserQuestion(toolName, input, options);
           }
 
+          // Plan mode: only allow read-only tools, deny all write/execute operations
+          if (this.mode === 'plan') {
+            const readOnlyTools = [
+              'Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch',
+              'Task', 'TodoWrite', 'EnterPlanMode', 'ExitPlanMode'
+            ];
+            if (readOnlyTools.includes(toolName)) {
+              console.log(`[canUseTool] Plan mode: allowing read-only tool: ${toolName}`);
+              return { behavior: 'allow', updatedInput: input };
+            }
+            console.log(`[canUseTool] Plan mode: denying write/execute tool: ${toolName}`);
+            return { behavior: 'deny', message: 'Plan mode: only read-only operations are allowed. Switch to default mode to execute this tool.' };
+          }
+
           // Accept Edits mode: auto-approve file operations
           if (this.mode === 'acceptEdits') {
             const editTools = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
@@ -52,7 +68,7 @@ class ClaudeProcess extends EventEmitter {
             }
           }
 
-          // Default and Plan mode: go through permission flow
+          // Default mode: go through permission flow
           console.log(`[canUseTool] Requesting permission for: ${toolName}`);
           return this.handlePermissionRequest(toolName, input, options);
         }
@@ -251,11 +267,17 @@ class ClaudeProcess extends EventEmitter {
   sendMessage(content) {
     this.isProcessing = true;
 
+    // Prepend mode context for plan mode so the agent knows its current mode
+    let messageContent = content;
+    if (this.mode === 'plan') {
+      messageContent = `[SYSTEM: You are currently in PLAN MODE. In this mode, you should focus on planning and analysis only. You can read files, search code, and explore the codebase, but you should NOT make any changes to files or execute commands that modify the system. Create a detailed plan for the user's request and use the ExitPlanMode tool when ready for approval.]\n\n${content}`;
+    }
+
     if (this.messageResolver) {
-      this.messageResolver(content);
+      this.messageResolver(messageContent);
       this.messageResolver = null;
     } else {
-      this.messageQueue.push(content);
+      this.messageQueue.push(messageContent);
     }
     return true;
   }
