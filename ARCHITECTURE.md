@@ -32,8 +32,8 @@ Claude Code Web uses a hybrid architecture with two main components:
 │  │  │   Session    │   │   Claude     │   │   Terminal Manager        │  │   │
 │  │  │   Manager    │   │   Process    │   │   (node-pty)              │  │   │
 │  │  │              │   │              │   │                           │  │   │
-│  │  │   Sessions   │   │   CLI spawn  │   │   PTY terminals           │  │   │
-│  │  │   History    │   │   stream-json│   │   Starship prompt         │  │   │
+│  │  │   Sessions   │   │   query()    │   │   PTY terminals           │  │   │
+│  │  │   History    │   │   canUseTool │   │   Starship prompt         │  │   │
 │  │  └──────────────┘   └──────────────┘   └───────────────────────────┘  │   │
 │  └────────────────────────────────────────────────────────────────────────┘   │
 └───────────────────────────────────────────────────────────────────────────────┘
@@ -108,50 +108,95 @@ Express.js application running on the host machine:
 
 ### 5. Session Manager (`src/session-manager.js`)
 
-Manages Claude CLI sessions:
+Manages Claude sessions with SQLite persistence:
 
 ```javascript
 {
   sessions: Map<sessionId, {
     id: string,
+    name: string,
     process: ClaudeProcess,
     history: Array,
     createdAt: number,
     lastActivity: number,
-    workingDirectory: string
+    workingDirectory: string,
+    mode: 'default' | 'acceptEdits' | 'plan',
+    persisted: boolean  // true if loaded from database
   }>
 }
 ```
 
+**Configuration:**
+- `MAX_SESSIONS` - Maximum concurrent sessions (default: 5)
+- `SESSION_TIMEOUT` - Session timeout in ms (default: 3600000 = 1 hour)
+
 **Session Lifecycle:**
-1. Create session with working directory
-2. Spawn Claude process
-3. Track message history
-4. Clean up expired sessions
-5. Terminate on disconnect or manual close
+1. Load persisted sessions from SQLite on startup
+2. Create session with working directory and name
+3. Spawn Claude process via SDK
+4. Track message history (persisted to database)
+5. Sessions can be renamed
+6. Mode can be changed (default/acceptEdits/plan)
+7. Clean up expired sessions automatically
+8. Terminate on disconnect or manual close
+9. Sessions recover when user rejoins (if persisted)
+
+### 5.1 Session Database (`src/database.js`)
+
+SQLite persistence layer using better-sqlite3:
+
+**Tables:**
+- `sessions` - Session metadata (id, name, working_directory, mode, timestamps, is_active)
+- `messages` - Message history (session_id, role, content, timestamp)
+
+**Features:**
+- WAL mode for better concurrent access
+- Periodic WAL checkpoints (every 5 minutes)
+- Automatic cleanup of expired sessions
+- Foreign key constraints for data integrity
 
 ### 6. Claude Process (`src/claude-process.js`)
 
-Wraps the Claude CLI as a child process:
+Wraps the Claude Agent SDK for AI interactions:
 
 ```javascript
-spawn('claude', ['--output-format', 'stream-json', '--verbose'], {
-  cwd: workingDirectory,
-  env: {
-    HOME: workingDirectory,
-    TERM: 'dumb',
-    CI: 'true'
+const { query } = require('@anthropic-ai/claude-agent-sdk');
+
+queryInstance = query({
+  prompt: messageGenerator,  // Async generator for streaming input
+  options: {
+    cwd: workingDirectory,
+    permissionMode: 'default',
+    canUseTool: async (toolName, input, options) => {
+      // Handle permission request - must return { behavior: 'allow' | 'deny' }
+      // Implements mode-based auto-approval:
+      // - Plan mode: only allow read-only tools
+      // - Accept Edits mode: auto-approve file edits
+      // - Default mode: prompt user for permission
+    }
   }
 });
 ```
+
+**Operating Modes:**
+- `default` - Normal operation with permission prompts
+- `acceptEdits` - Auto-approve Edit, Write, MultiEdit, NotebookEdit
+- `plan` - Read-only mode (only allows Glob, Grep, Read, WebFetch, WebSearch, Task, TodoWrite)
 
 **Event Types Emitted:**
 - `chunk` - Streaming text content
 - `content_start/stop` - Content block boundaries
 - `tool_input_delta` - Tool use streaming
+- `tool_use` - Tool being executed (with agentId for nested agents)
 - `complete` - Message complete
+- `result` - Final result
 - `error` - Error occurred
 - `cancelled` - Operation cancelled
+- `permission_request` - Tool needs user approval
+- `prompt` - AskUserQuestion from Claude
+- `agent_start` - New agent task started
+- `task_notification` - Background task completed
+- `exit_plan_mode_request` - Plan mode exit requested
 
 ### 7. Terminal Manager (`src/terminal-manager.js`)
 
@@ -185,11 +230,17 @@ Browser Client            Gateway              Host Server
 
 | Client → Server | Description |
 |-----------------|-------------|
-| `create_session` | Create new Claude session |
+| `create_session` | Create new Claude session (with workingDirectory, name) |
 | `join_session` | Join existing session |
 | `message` | Send message to Claude |
 | `cancel` | Cancel current operation |
 | `list_sessions` | List all sessions |
+| `rename_session` | Rename a session |
+| `list_agents` | List active agents |
+| `set_mode` | Change mode (default/acceptEdits/plan) |
+| `prompt_response` | Respond to AskUserQuestion |
+| `permission_response` | Respond to tool permission request |
+| `exit_plan_mode_response` | Approve/deny exiting plan mode |
 | `terminal_create` | Create new PTY terminal |
 | `terminal_input` | Send input to terminal |
 | `terminal_resize` | Resize terminal |
@@ -199,14 +250,27 @@ Browser Client            Gateway              Host Server
 |-----------------|-------------|
 | `connected` | Connection established |
 | `session_created` | Session ready |
-| `session_joined` | Joined with history |
+| `session_joined` | Joined with history (and mode) |
+| `session_renamed` | Session name changed |
+| `sessions_list` | List of all sessions |
+| `message_sent` | Message sent to Claude |
 | `chunk` | Streaming text |
 | `content_start/stop` | Content boundaries |
+| `tool_use` | Tool being executed (with agentId) |
 | `complete` | Response complete |
+| `result` | Final result |
 | `error` | Error occurred |
+| `cancelled` | Operation cancelled |
+| `permission_request` | Tool needs user approval |
+| `prompt` | AskUserQuestion from Claude |
+| `mode_changed` | Operating mode changed |
+| `agent_start` | New agent task started |
+| `task_notification` | Background task completed |
+| `agents_list` | List of active agents |
+| `exit_plan_mode_request` | Plan mode exit requested |
 | `terminal_created` | Terminal ready with ID |
-| `terminal_output` | Terminal output data |
-| `terminal_closed` | Terminal closed |
+| `terminal_data` | Terminal output data |
+| `terminal_exit` | Terminal closed |
 
 ## Data Flow
 
@@ -318,11 +382,15 @@ claude-code-web/
 │   ├── host-server-manager.js # Host server connection
 │   ├── session-manager.js   # Claude session management
 │   ├── terminal-manager.js  # PTY terminal management
-│   ├── claude-process.js    # Claude CLI wrapper
-│   └── websocket.js         # WebSocket handler
+│   ├── claude-process.js    # Claude Agent SDK wrapper
+│   ├── websocket.js         # WebSocket handler
+│   ├── database.js          # SQLite session persistence
+│   ├── environment-manager.js # User environment management
+│   └── auth.js              # Authentication utilities
 └── data/                    # Runtime data
     ├── server.log           # Host server logs
-    └── server.pid           # Host server PID
+    ├── server.pid           # Host server PID
+    └── sessions.db          # SQLite database for session persistence
 ```
 
 ## Docker Configuration
@@ -382,6 +450,64 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 | `node-pty` | Terminal emulation | Host |
 | `http-proxy` | Proxy requests/websockets | Gateway |
 
+## Agent System
+
+The Claude Process tracks background agents (sub-tasks) launched via the Task tool:
+
+```javascript
+{
+  activeAgents: Map<taskId, {
+    description: string,    // Short description (3-5 words)
+    agentType: string,      // 'Bash', 'general-purpose', 'Explore', 'Plan', etc.
+    startTime: number
+  }>,
+  agentContextStack: Array<taskId>  // Stack for tracking nested agents
+}
+```
+
+**Agent Types:**
+- `Bash` - Command execution specialist
+- `general-purpose` - Multi-step tasks, code search
+- `Explore` - Fast codebase exploration
+- `Plan` - Implementation planning
+
+**Events:**
+- `agent_start` - Emitted when Task tool creates a new agent
+- `task_notification` - Emitted when background agent completes
+- `tool_use` (with `agentId`) - Tools executed by agents include their parent agent ID
+
+## Permission System
+
+The `canUseTool` callback in ClaudeProcess implements dynamic permission handling:
+
+```javascript
+canUseTool: async (toolName, input, options) => {
+  // Plan mode: only allow read-only tools
+  if (this.mode === 'plan') {
+    const readOnlyTools = ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'EnterPlanMode'];
+    if (readOnlyTools.includes(toolName)) {
+      return { behavior: 'allow', updatedInput: input };
+    }
+    return { behavior: 'deny', message: 'Plan mode: only read-only operations allowed' };
+  }
+
+  // Accept Edits mode: auto-approve file operations
+  if (this.mode === 'acceptEdits') {
+    const editTools = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
+    if (editTools.includes(toolName)) {
+      return { behavior: 'allow', updatedInput: input };
+    }
+  }
+
+  // Default mode: emit permission_request and wait for user response
+  return this.handlePermissionRequest(toolName, input, options);
+}
+```
+
+**Special Tool Handling:**
+- `AskUserQuestion` - Emits `prompt` event, waits for user answers via `prompt_response`
+- `ExitPlanMode` - In plan mode, emits `exit_plan_mode_request`, requires user approval
+
 ## Security Considerations
 
 1. **Authentication**: PAM auth via mounted `/etc/shadow` (read-only)
@@ -389,3 +515,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 3. **URL Decoding**: Session tokens URL-decoded to handle browser encoding
 4. **Host Isolation**: Gateway runs in container, sessions run on host
 5. **No Docker Socket**: Gateway doesn't need Docker socket access
+6. **Directory Restrictions**: `/api/directories` only allows browsing within user's home directory

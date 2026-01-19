@@ -1,9 +1,37 @@
+/**
+ * WebSocket Handler Module
+ *
+ * Real-time communication layer between browser clients and the server.
+ *
+ * Message Types (Client → Server):
+ * - create_session, join_session, message, cancel
+ * - prompt_response, permission_response
+ * - set_mode, rename_session, list_sessions, list_agents
+ * - exit_plan_mode_response
+ * - terminal_create, terminal_input, terminal_resize, terminal_close
+ *
+ * Message Types (Server → Client):
+ * - connected, session_created, session_joined, session_renamed
+ * - chunk, complete, result, error, cancelled
+ * - permission_request, prompt, mode_changed
+ * - agent_start, task_notification, tool_use
+ * - exit_plan_mode_request
+ * - terminal_created, terminal_data, terminal_exit
+ *
+ * @module websocket
+ */
+
 const WebSocket = require('ws');
 const { sessionManager } = require('./session-manager');
 const { environmentManager } = require('./environment-manager');
 const { terminalManager } = require('./terminal-manager');
 
-// Parse cookies from header
+/**
+ * Parse cookies from HTTP header string.
+ *
+ * @param {string} cookieHeader - The Cookie header value
+ * @returns {Object<string, string>} Parsed cookies as key-value pairs
+ */
 function parseCookies(cookieHeader) {
   const cookies = {};
   if (!cookieHeader) return cookies;
@@ -14,7 +42,13 @@ function parseCookies(cookieHeader) {
   return cookies;
 }
 
-// Safely send a message, checking if WebSocket is still open
+/**
+ * Safely send a JSON message to a WebSocket client.
+ *
+ * @param {WebSocket} ws - The WebSocket connection
+ * @param {Object} data - Data to send (will be JSON stringified)
+ * @returns {boolean} True if message was sent, false if connection not open
+ */
 function safeSend(ws, data) {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(data));
@@ -23,11 +57,22 @@ function safeSend(ws, data) {
   return false;
 }
 
-// Check if WebSocket is still connected
+/**
+ * Check if WebSocket connection is still open.
+ *
+ * @param {WebSocket} ws - The WebSocket connection
+ * @returns {boolean} True if connection is open
+ */
 function isWsOpen(ws) {
   return ws.readyState === WebSocket.OPEN;
 }
 
+/**
+ * Set up WebSocket server and handlers.
+ *
+ * @param {http.Server} server - HTTP server to attach WebSocket to
+ * @returns {WebSocket.Server} The WebSocket server instance
+ */
 function setupWebSocket(server) {
   // Import auth functions from server.js (they're exported)
   const { verifySessionToken, USERS, SINGLE_USER_MODE } = require('../server');

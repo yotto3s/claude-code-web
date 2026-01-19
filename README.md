@@ -6,9 +6,11 @@ A web-based interface for Claude Code CLI that enables browser access to Claude'
 
 - **Web Interface**: Access Claude Code through a browser-based chat interface
 - **Integrated Terminal**: Full PTY terminal access alongside Claude conversations (via node-pty)
-- **Streaming Responses**: Real-time streaming of Claude's responses in JSON stream format
+- **Streaming Responses**: Real-time streaming of Claude's responses via Claude Agent SDK
+- **Session Persistence**: Sessions and message history persist across server restarts (SQLite)
 - **Session Management**: Multiple concurrent Claude sessions with automatic cleanup
-- **Persistent Environment**: Files created by Claude persist across sessions
+- **Agent System**: Track and manage background agents (Explore, Plan, Bash, etc.)
+- **Operating Modes**: Default, Accept Edits (auto-approve file changes), and Plan (read-only)
 - **Multi-user Support**: PAM authentication with gateway in Docker
 - **Starship Prompt**: Beautiful shell prompt in the integrated terminal
 
@@ -36,7 +38,7 @@ Claude Code Web uses a hybrid architecture:
 │  │                    Port 3001                              │      │
 │  │  ┌────────────┐   ┌────────────┐   ┌────────────────┐    │      │
 │  │  │  Session   │   │  Claude    │   │  Terminal      │    │      │
-│  │  │  Manager   │   │  Process   │   │  Manager (PTY) │    │      │
+│  │  │  Manager   │   │  Agent SDK │   │  Manager (PTY) │    │      │
 │  │  └────────────┘   └────────────┘   └────────────────┘    │      │
 │  └──────────────────────────────────────────────────────────┘      │
 └────────────────────────────────────────────────────────────────────┘
@@ -251,6 +253,18 @@ docker run -p 3000:3000 \
   claude-code-gateway
 ```
 
+## Operating Modes
+
+The web interface supports three operating modes:
+
+| Mode | Description |
+|------|-------------|
+| **Default** | Normal operation with permission prompts for tool execution |
+| **Accept Edits** | Auto-approves file edit operations (Edit, Write, MultiEdit, NotebookEdit) |
+| **Plan** | Read-only mode for exploration and planning - only allows Glob, Grep, Read, WebFetch, WebSearch, Task, TodoWrite |
+
+Switch modes via the UI or send a `set_mode` WebSocket message.
+
 ## API Endpoints
 
 | Method | Endpoint | Description |
@@ -261,7 +275,10 @@ docker run -p 3000:3000 \
 | GET | `/api/sessions` | List active sessions |
 | POST | `/api/sessions` | Create new session |
 | DELETE | `/api/sessions/:id` | Terminate session |
+| GET | `/api/home` | Get user's home directory |
+| GET | `/api/directories` | Browse directories (with path query param) |
 | GET | `/api/health` | Health check (no auth) |
+| GET | `/api/server/status` | Server status (gateway only) |
 | GET | `/health` | Gateway health check |
 
 ### WebSocket Protocol
@@ -270,7 +287,10 @@ Connect to `/ws` for real-time communication:
 
 ```javascript
 // Create session
-ws.send(JSON.stringify({ type: 'create_session' }));
+ws.send(JSON.stringify({ type: 'create_session', workingDirectory: '/path/to/dir', name: 'My Session' }));
+
+// Join existing session
+ws.send(JSON.stringify({ type: 'join_session', sessionId: '...' }));
 
 // Send message to Claude
 ws.send(JSON.stringify({ type: 'message', content: 'Hello Claude' }));
@@ -278,22 +298,77 @@ ws.send(JSON.stringify({ type: 'message', content: 'Hello Claude' }));
 // Cancel current operation
 ws.send(JSON.stringify({ type: 'cancel' }));
 
+// Respond to permission request
+ws.send(JSON.stringify({ type: 'permission_response', requestId: '...', decision: 'allow' }));
+
+// Respond to AskUserQuestion prompt
+ws.send(JSON.stringify({ type: 'prompt_response', requestId: '...', response: { answers: {...} } }));
+
+// Set operating mode
+ws.send(JSON.stringify({ type: 'set_mode', mode: 'acceptEdits' })); // 'default' | 'acceptEdits' | 'plan'
+
+// Session management
+ws.send(JSON.stringify({ type: 'list_sessions' }));
+ws.send(JSON.stringify({ type: 'rename_session', name: 'New Name' }));
+ws.send(JSON.stringify({ type: 'list_agents' }));
+
 // Terminal operations
 ws.send(JSON.stringify({ type: 'terminal_create' }));
 ws.send(JSON.stringify({ type: 'terminal_input', terminalId: '...', data: 'ls -la\n' }));
 ws.send(JSON.stringify({ type: 'terminal_resize', terminalId: '...', cols: 80, rows: 24 }));
+ws.send(JSON.stringify({ type: 'terminal_close', terminalId: '...' }));
 ```
+
+**Server → Client Message Types:**
+
+| Type | Description |
+|------|-------------|
+| `connected` | WebSocket connection established |
+| `session_created` | New session created with ID |
+| `session_joined` | Joined session with history |
+| `session_renamed` | Session name changed |
+| `sessions_list` | List of all sessions |
+| `message_sent` | Message sent to Claude |
+| `chunk` | Streaming text response |
+| `complete` | Response complete |
+| `result` | Final result with message |
+| `error` | Error occurred |
+| `permission_request` | Tool needs user approval |
+| `prompt` | AskUserQuestion from Claude |
+| `mode_changed` | Operating mode changed |
+| `agent_start` | New agent task started |
+| `task_notification` | Background task completed |
+| `tool_use` | Tool being executed |
+| `exit_plan_mode_request` | Plan mode exit requested |
+| `terminal_created` | Terminal ready |
+| `terminal_data` | Terminal output |
+| `terminal_exit` | Terminal closed |
+
+## Session Persistence
+
+Sessions and message history are persisted to a SQLite database:
+
+- **Location**: `data/sessions.db`
+- **Features**:
+  - Sessions survive server restarts
+  - Message history is preserved
+  - Sessions auto-recover when user rejoins
+  - WAL mode for better concurrent access
+  - Automatic cleanup of expired sessions (1-hour timeout by default)
 
 ## Dependencies
 
 | Package | Purpose |
 |---------|---------|
+| `@anthropic-ai/claude-agent-sdk` | Claude Agent SDK for AI interactions |
 | `express` | HTTP server framework |
 | `ws` | WebSocket server |
 | `cookie-parser` | Parse cookies for sessions |
 | `uuid` | Generate unique session IDs |
 | `node-pty` | Terminal emulation |
 | `http-proxy` | Proxy requests in gateway |
+| `better-sqlite3` | SQLite database for session persistence |
+| `zod` | Schema validation |
 
 ## License
 

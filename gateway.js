@@ -1,10 +1,18 @@
 /**
  * Hybrid Gateway Server
- * 
- * This gateway:
- * 1. Runs in a Docker container
- * 2. Handles user authentication against the host system (PAM)
- * 3. Proxies requests to a single server running on the host
+ *
+ * This gateway runs in a Docker container (Ubuntu 24.04) and:
+ * 1. Handles user authentication against the host system (PAM via /etc/passwd, /etc/shadow)
+ * 2. Issues signed JWT-like session cookies (24-hour expiry)
+ * 3. Proxies HTTP requests and WebSocket connections to the host server
+ *
+ * Environment Variables:
+ * - HOST_SERVER_IP: IP address of host server (default: host.docker.internal or 172.17.0.1)
+ * - HOST_SERVER_PORT: Port of host server (default: 3001)
+ * - SESSION_SECRET: Secret for signing session cookies (auto-generated if not set)
+ * - PORT: Gateway listen port (default: 3000)
+ *
+ * @module gateway
  */
 
 const express = require('express');
@@ -77,10 +85,18 @@ function loadOrCreateSessionSecret() {
 
 const SESSION_SECRET = loadOrCreateSessionSecret();
 
-// Active user sessions: username -> { token, userInfo }
+/** @type {Map<string, {token: string, userInfo: object}>} Active user sessions */
 const userSessions = new Map();
 
-// Sign/verify session tokens
+/**
+ * Create a signed session token for a user.
+ * Token format: base64(JSON data) + '.' + HMAC-SHA256 signature
+ * Token includes user info (uid, gid, home) and expires after 24 hours.
+ *
+ * @param {string} username - The username
+ * @param {object} userInfo - User info from PAM (uid, gid, home)
+ * @returns {string} Signed session token
+ */
 function createSessionToken(username, userInfo) {
   const data = JSON.stringify({
     username,
@@ -93,6 +109,13 @@ function createSessionToken(username, userInfo) {
   return Buffer.from(data).toString('base64') + '.' + signature;
 }
 
+/**
+ * Verify and decode a session token.
+ * Handles URL-encoded tokens from browser cookies.
+ *
+ * @param {string} token - The session token to verify
+ * @returns {object|null} Decoded session data (username, uid, gid, home) or null if invalid
+ */
 function verifySessionToken(token) {
   if (!token) return null;
   // URL-decode the token in case browser encoded it

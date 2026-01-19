@@ -1,3 +1,17 @@
+/**
+ * Host Server
+ *
+ * Express.js application running on the host machine that:
+ * - Serves static files (HTML, CSS, JS)
+ * - Handles HTTP API endpoints
+ * - Manages WebSocket connections
+ * - Runs Claude sessions via the Agent SDK
+ *
+ * Can run in single-user mode (no auth) or multi-user mode (with USERS env var).
+ * When used with the gateway, authentication is handled by the gateway and this
+ * server runs in single-user mode.
+ */
+
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -30,13 +44,26 @@ if (!SINGLE_USER_MODE && process.env.USERS) {
 // Session secret for signing cookies
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
-// Sign/verify session tokens
+/**
+ * Create a signed session token for a user.
+ * Token format: base64(JSON data) + '.' + HMAC-SHA256 signature
+ * Token expires after 24 hours.
+ *
+ * @param {string} username - The username to create a token for
+ * @returns {string} Signed session token
+ */
 function createSessionToken(username) {
   const data = JSON.stringify({ username, exp: Date.now() + 24 * 60 * 60 * 1000 });
   const signature = crypto.createHmac('sha256', SESSION_SECRET).update(data).digest('hex');
   return Buffer.from(data).toString('base64') + '.' + signature;
 }
 
+/**
+ * Verify and decode a session token.
+ *
+ * @param {string} token - The session token to verify
+ * @returns {string|null} Username if token is valid and not expired, null otherwise
+ */
 function verifySessionToken(token) {
   if (!token) return null;
   const [data, signature] = token.split('.');

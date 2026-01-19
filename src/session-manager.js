@@ -1,10 +1,31 @@
+/**
+ * Session Manager Module
+ *
+ * Manages Claude sessions with SQLite persistence:
+ * - Creates, retrieves, and terminates sessions
+ * - Persists sessions and message history to database
+ * - Recovers sessions on server restart
+ * - Automatic cleanup of expired sessions
+ * - Mode management (default, acceptEdits, plan)
+ *
+ * @module session-manager
+ */
+
 const { v4: uuidv4 } = require('uuid');
 const { ClaudeProcess } = require('./claude-process');
 const { sessionDatabase } = require('./database');
 
+/** @type {number} Maximum concurrent sessions (default: 5) */
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || '5', 10);
+
+/** @type {number} Session timeout in milliseconds (default: 1 hour) */
 const SESSION_TIMEOUT = parseInt(process.env.SESSION_TIMEOUT || '3600000', 10);
 
+/**
+ * Manages Claude sessions with persistence.
+ *
+ * @class SessionManager
+ */
 class SessionManager {
   constructor() {
     this.sessions = new Map();
@@ -278,17 +299,14 @@ class SessionManager {
   }
 
   terminateAll() {
+    // Only terminate processes, but DON'T deactivate sessions in database
+    // Sessions should persist across server restarts so users can rejoin them
     for (const [id, session] of this.sessions) {
       if (session.process) {
         session.process.terminate();
       }
-
-      // Mark as inactive in database
-      try {
-        sessionDatabase.deactivateSession(id);
-      } catch (err) {
-        console.error('Error deactivating session in database:', err.message);
-      }
+      // Note: We intentionally don't call sessionDatabase.deactivateSession(id) here
+      // Sessions are only deactivated when explicitly terminated by user or expired
     }
     this.sessions.clear();
 

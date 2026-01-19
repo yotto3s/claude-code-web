@@ -1,3 +1,20 @@
+/**
+ * Session Database Module
+ *
+ * SQLite persistence layer for session management using better-sqlite3.
+ *
+ * Features:
+ * - WAL mode for better concurrent access
+ * - Periodic WAL checkpoints (every 5 minutes)
+ * - Foreign key constraints for data integrity
+ *
+ * Schema:
+ * - sessions: id, name, working_directory, mode, created_at, last_activity, is_active
+ * - messages: id, session_id, role, content, timestamp
+ *
+ * @module database
+ */
+
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
@@ -8,8 +25,14 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+/** @type {string} Path to the SQLite database file */
 const DB_PATH = path.join(DATA_DIR, 'sessions.db');
 
+/**
+ * SQLite database wrapper for session persistence.
+ *
+ * @class SessionDatabase
+ */
 class SessionDatabase {
   constructor() {
     this.db = new Database(DB_PATH);

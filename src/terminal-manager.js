@@ -1,9 +1,40 @@
+/**
+ * Terminal Manager Module
+ *
+ * PTY terminal management using node-pty.
+ *
+ * Features:
+ * - Creates pseudo-terminals with bash/powershell
+ * - Handles terminal input/output streaming
+ * - Supports terminal resize operations
+ * - Starship prompt integration
+ * - Automatic cleanup of inactive terminals (30-minute timeout)
+ *
+ * @module terminal-manager
+ */
+
 const pty = require('node-pty');
 const EventEmitter = require('events');
 const os = require('os');
 const path = require('path');
 
+/**
+ * Represents a single PTY terminal session.
+ *
+ * @extends EventEmitter
+ * @fires TerminalSession#data - Terminal output data
+ * @fires TerminalSession#exit - Terminal process exited
+ * @fires TerminalSession#started - Terminal started
+ * @fires TerminalSession#cleanup - Terminal cleaned up
+ */
 class TerminalSession extends EventEmitter {
+  /**
+   * Create a new terminal session.
+   *
+   * @param {string} sessionId - Unique session identifier
+   * @param {string} [cwd] - Working directory for the terminal
+   * @param {string} [username] - Username for the session
+   */
   constructor(sessionId, cwd, username) {
     super();
     this.sessionId = sessionId;
@@ -88,12 +119,24 @@ class TerminalSession extends EventEmitter {
   }
 }
 
+/**
+ * Manages multiple PTY terminal sessions.
+ *
+ * @class TerminalManager
+ */
 class TerminalManager {
+  /**
+   * Create a new terminal manager.
+   * Starts automatic cleanup of inactive sessions every 5 minutes.
+   */
   constructor() {
+    /** @type {Map<string, TerminalSession>} Map of session ID to terminal */
     this.terminals = new Map();
-    this.sessionTimeoutMs = 30 * 60 * 1000; // 30 minutes
-    this.cleanupIntervalMs = 5 * 60 * 1000; // 5 minutes
-    
+    /** @type {number} Session timeout in ms (30 minutes) */
+    this.sessionTimeoutMs = 30 * 60 * 1000;
+    /** @type {number} Cleanup check interval in ms (5 minutes) */
+    this.cleanupIntervalMs = 5 * 60 * 1000;
+
     // Start cleanup timer
     this.cleanupTimer = setInterval(() => {
       this.cleanupInactiveSessions();

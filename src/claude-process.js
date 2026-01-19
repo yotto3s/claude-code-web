@@ -1,23 +1,79 @@
+/**
+ * Claude Process Module
+ *
+ * Wraps the Claude Agent SDK for AI interactions, providing:
+ * - Streaming message input/output via async generators
+ * - Mode-based permission handling (default, acceptEdits, plan)
+ * - Agent tracking for background tasks
+ * - Permission request/response flow
+ * - AskUserQuestion handling
+ *
+ * @module claude-process
+ */
+
 const { query } = require('@anthropic-ai/claude-agent-sdk');
 const EventEmitter = require('events');
 const path = require('path');
 
+/**
+ * ClaudeProcess wraps the Claude Agent SDK query() function.
+ *
+ * @extends EventEmitter
+ *
+ * @fires ClaudeProcess#started - When the process starts
+ * @fires ClaudeProcess#ready - When the process is ready for messages
+ * @fires ClaudeProcess#chunk - Streaming text content
+ * @fires ClaudeProcess#complete - Message complete
+ * @fires ClaudeProcess#result - Final result
+ * @fires ClaudeProcess#error - Error occurred
+ * @fires ClaudeProcess#cancelled - Operation cancelled
+ * @fires ClaudeProcess#permission_request - Tool needs user approval
+ * @fires ClaudeProcess#prompt - AskUserQuestion from Claude
+ * @fires ClaudeProcess#tool_use - Tool being executed
+ * @fires ClaudeProcess#agent_start - New agent task started
+ * @fires ClaudeProcess#task_notification - Background task completed
+ * @fires ClaudeProcess#exit_plan_mode_request - Plan mode exit requested
+ */
 class ClaudeProcess extends EventEmitter {
+  /**
+   * Create a new ClaudeProcess.
+   *
+   * @param {string} [workingDirectory] - Working directory for Claude operations
+   */
   constructor(workingDirectory) {
     super();
+    /** @type {string} Working directory for file operations */
     this.workingDirectory = workingDirectory || process.cwd();
+    /** @type {object|null} SDK query instance */
     this.queryInstance = null;
+    /** @type {string[]} Queue of pending messages */
     this.messageQueue = [];
+    /** @type {function|null} Resolver for next message */
     this.messageResolver = null;
+    /** @type {string|null} Current session ID */
     this.sessionId = null;
-    this.pendingPermissions = new Map(); // requestId -> {resolve, reject}
-    this.pendingPrompts = new Map(); // requestId -> {resolve} for AskUserQuestion
+    /** @type {Map<string, {resolve: function, reject: function}>} Pending permission requests */
+    this.pendingPermissions = new Map();
+    /** @type {Map<string, {resolve: function}>} Pending prompt responses (AskUserQuestion) */
+    this.pendingPrompts = new Map();
+    /** @type {boolean} Whether a message is being processed */
     this.isProcessing = false;
-    this.mode = 'default'; // 'default', 'acceptEdits', or 'plan'
-    this.activeAgents = new Map(); // taskId -> { description, agentType, startTime }
-    this.agentContextStack = []; // Stack of active agent taskIds for tracking nested agents
+    /** @type {'default'|'acceptEdits'|'plan'} Current operating mode */
+    this.mode = 'default';
+    /** @type {Map<string, {description: string, agentType: string, startTime: number}>} Active background agents */
+    this.activeAgents = new Map();
+    /** @type {string[]} Stack of active agent taskIds for tracking nested agents */
+    this.agentContextStack = [];
   }
 
+  /**
+   * Set the operating mode.
+   *
+   * @param {'default'|'acceptEdits'|'plan'} mode - The mode to set
+   * - default: Normal operation with permission prompts
+   * - acceptEdits: Auto-approve file edit operations
+   * - plan: Read-only mode, only allows exploration tools
+   */
   setMode(mode) {
     const validModes = ['default', 'acceptEdits', 'plan'];
     if (validModes.includes(mode)) {
@@ -225,16 +281,10 @@ class ClaudeProcess extends EventEmitter {
       }
     });
 
-    // Wait for user response (with 60s timeout)
+    // Wait for user response (no timeout)
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingPermissions.delete(requestId);
-        resolve({ behavior: 'deny', message: 'Permission request timed out' });
-      }, 60000);
-
       this.pendingPermissions.set(requestId, {
         resolve: (result) => {
-          clearTimeout(timeout);
           this.pendingPermissions.delete(requestId);
           resolve(result);
         },
@@ -255,16 +305,10 @@ class ClaudeProcess extends EventEmitter {
       input: input
     });
 
-    // Wait for user response (with 120s timeout for questions - longer than permission requests)
+    // Wait for user response (no timeout)
     return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        this.pendingPrompts.delete(requestId);
-        resolve({ behavior: 'deny', message: 'Question timed out' });
-      }, 120000);
-
       this.pendingPrompts.set(requestId, {
         resolve: (answers) => {
-          clearTimeout(timeout);
           this.pendingPrompts.delete(requestId);
           // Return allow with the answers populated in input
           resolve({
@@ -298,16 +342,10 @@ class ClaudeProcess extends EventEmitter {
       input: input
     });
 
-    // Wait for user response (with 120s timeout)
+    // Wait for user response (no timeout)
     return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        this.pendingPrompts.delete(requestId);
-        resolve({ behavior: 'deny', message: 'Exit plan mode request timed out' });
-      }, 120000);
-
       this.pendingPrompts.set(requestId, {
         resolve: (approved) => {
-          clearTimeout(timeout);
           this.pendingPrompts.delete(requestId);
           if (approved) {
             // User approved - allow the tool and switch mode
