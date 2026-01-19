@@ -70,11 +70,32 @@ class App {
     // Setup event listeners
     this.setupEventListeners();
 
+    // Initialize slash command autocomplete
+    this.initSlashAutocomplete();
+
     // Fetch home directory for browser first
     await this.fetchHomeDirectory();
 
     // Connect WebSocket
     await this.connectWebSocket();
+  }
+
+  initSlashAutocomplete() {
+    const inputField = document.querySelector('.input-field');
+    if (inputField && this.elements.messageInput && window.SlashCommandAutocomplete) {
+      this.slashAutocomplete = new SlashCommandAutocomplete({
+        textarea: this.elements.messageInput,
+        container: inputField,
+        onExecute: (cmd) => this.handleSlashCommand(cmd)
+      });
+    }
+  }
+
+  handleSlashCommand(cmd) {
+    // This is called when a command is selected from autocomplete
+    // The command text is already in the input, user can press Enter to send
+    // Or we can handle some commands client-side
+    console.log('Slash command selected:', cmd.name);
   }
 
   setupEventListeners() {
@@ -83,6 +104,16 @@ class App {
 
     // Textarea handling
     this.elements.messageInput.addEventListener('keydown', (e) => {
+      // Let autocomplete handle navigation keys when visible
+      if (this.slashAutocomplete && this.slashAutocomplete.isVisible) {
+        if (['ArrowUp', 'ArrowDown', 'Escape'].includes(e.key)) {
+          return; // Autocomplete handles these
+        }
+        if (['Enter', 'Tab'].includes(e.key) && this.slashAutocomplete.selectedIndex >= 0) {
+          return; // Autocomplete handles selection
+        }
+      }
+
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         this.sendMessage();
