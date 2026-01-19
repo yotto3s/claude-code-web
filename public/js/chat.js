@@ -136,6 +136,78 @@ class ChatUI {
     this.scrollToBottom();
   }
 
+  showToolExecution(toolName, toolInput) {
+    // Create a collapsible tool execution block
+    const toolBlock = document.createElement('div');
+    toolBlock.className = 'tool-execution';
+
+    // Format the input for display
+    let inputDisplay = '';
+    if (toolInput) {
+      if (toolInput.command) {
+        // Bash command
+        inputDisplay = `<code class="tool-command">${escapeHtml(toolInput.command)}</code>`;
+        if (toolInput.description) {
+          inputDisplay = `<span class="tool-description">${escapeHtml(toolInput.description)}</span>` + inputDisplay;
+        }
+      } else if (toolInput.file_path) {
+        // File operations (Read, Write, Edit)
+        inputDisplay = `<code class="tool-filepath">${escapeHtml(toolInput.file_path)}</code>`;
+        if (toolInput.pattern) {
+          inputDisplay += `<span class="tool-pattern">Pattern: ${escapeHtml(toolInput.pattern)}</span>`;
+        }
+        if (toolInput.old_string && toolInput.new_string) {
+          inputDisplay += `<div class="tool-edit-preview">
+            <div class="edit-old"><span class="edit-label">-</span>${escapeHtml(toolInput.old_string.substring(0, 100))}${toolInput.old_string.length > 100 ? '...' : ''}</div>
+            <div class="edit-new"><span class="edit-label">+</span>${escapeHtml(toolInput.new_string.substring(0, 100))}${toolInput.new_string.length > 100 ? '...' : ''}</div>
+          </div>`;
+        }
+      } else if (toolInput.pattern) {
+        // Glob or Grep
+        inputDisplay = `<code class="tool-pattern">${escapeHtml(toolInput.pattern)}</code>`;
+        if (toolInput.path) {
+          inputDisplay += ` <span class="tool-path">in ${escapeHtml(toolInput.path)}</span>`;
+        }
+      } else if (toolInput.query) {
+        // WebSearch
+        inputDisplay = `<code class="tool-query">${escapeHtml(toolInput.query)}</code>`;
+      } else if (toolInput.url) {
+        // WebFetch
+        inputDisplay = `<code class="tool-url">${escapeHtml(toolInput.url)}</code>`;
+      } else if (toolInput.prompt) {
+        // Task agent
+        inputDisplay = `<span class="tool-prompt">${escapeHtml(toolInput.prompt.substring(0, 150))}${toolInput.prompt.length > 150 ? '...' : ''}</span>`;
+      } else {
+        // Generic display for other tools
+        const inputStr = JSON.stringify(toolInput, null, 2);
+        if (inputStr.length > 200) {
+          inputDisplay = `<pre class="tool-json">${escapeHtml(inputStr.substring(0, 200))}...</pre>`;
+        } else {
+          inputDisplay = `<pre class="tool-json">${escapeHtml(inputStr)}</pre>`;
+        }
+      }
+    }
+
+    toolBlock.innerHTML = `
+      <div class="tool-execution-header">
+        <span class="tool-execution-icon">⚡</span>
+        <span class="tool-execution-name">${escapeHtml(toolName)}</span>
+        <span class="tool-execution-time">${new Date().toLocaleTimeString()}</span>
+      </div>
+      ${inputDisplay ? `<div class="tool-execution-input">${inputDisplay}</div>` : ''}
+    `;
+
+    // Insert the tool execution block
+    if (this.currentAssistantMessage) {
+      this.currentAssistantMessage.element.appendChild(toolBlock);
+    } else {
+      this.container.appendChild(toolBlock);
+    }
+
+    this.scrollToBottom();
+    return toolBlock;
+  }
+
   removeToolIndicator() {
     if (this.currentToolIndicator) {
       this.currentToolIndicator.remove();

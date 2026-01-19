@@ -464,6 +464,118 @@ html, body {
   to { transform: rotate(360deg); }
 }
 
+/* Tool Execution Display */
+.tool-execution {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin: 0.5rem 0;
+  overflow: hidden;
+  font-size: 0.85rem;
+}
+
+.tool-execution-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(139, 92, 246, 0.1);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tool-execution-icon {
+  font-size: 0.9rem;
+}
+
+.tool-execution-name {
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+.tool-execution-time {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.tool-execution-input {
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary);
+}
+
+.tool-execution-input code {
+  display: block;
+  background: var(--bg-primary);
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.8rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.tool-execution-input .tool-description {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  margin-bottom: 0.25rem;
+  font-style: italic;
+}
+
+.tool-execution-input .tool-path {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.tool-execution-input .tool-json {
+  background: var(--bg-primary);
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.75rem;
+  overflow-x: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.tool-execution-input .tool-prompt {
+  display: block;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.tool-edit-preview {
+  margin-top: 0.5rem;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.75rem;
+}
+
+.tool-edit-preview .edit-old {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px 4px 0 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.tool-edit-preview .edit-new {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0 0 4px 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.tool-edit-preview .edit-label {
+  font-weight: bold;
+  margin-right: 0.5rem;
+}
+
 /* Markdown Content */
 .message-content {
   line-height: 1.7;

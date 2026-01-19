@@ -205,6 +205,14 @@ class WebSocketClient {
         this.emit('agents_list', msg.agents);
         break;
 
+      case 'tool_use':
+        this.emit('tool_use', {
+          id: msg.id,
+          name: msg.name,
+          input: msg.input
+        });
+        break;
+
       default:
         console.log('Unknown message type:', msg.type, msg);
     }

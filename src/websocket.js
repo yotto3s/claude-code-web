@@ -403,6 +403,15 @@ function setupSessionListeners(ws, session) {
     });
   });
 
+  proc.on('tool_use', (data) => {
+    safeSend(ws, {
+      type: 'tool_use',
+      id: data.id,
+      name: data.name,
+      input: data.input
+    });
+  });
+
   proc.on('agent_start', (data) => {
     safeSend(ws, {
       type: 'agent_start',

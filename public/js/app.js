@@ -297,6 +297,9 @@ class App {
     // Session renamed handler
     this.ws.on('session_renamed', (data) => this.onSessionRenamed(data));
 
+    // Tool execution handler
+    this.ws.on('tool_use', (data) => this.onToolUse(data));
+
     try {
       await this.ws.connect();
     } catch (err) {
@@ -473,6 +476,11 @@ class App {
     this.chatUI.showPermissionPrompt(data, (requestId, decision, toolInput) => {
       this.ws.sendPermissionResponse(requestId, decision, toolInput);
     });
+  }
+
+  onToolUse(data) {
+    // Display tool execution in the chat
+    this.chatUI.showToolExecution(data.name, data.input);
   }
 
   sendMessage() {
