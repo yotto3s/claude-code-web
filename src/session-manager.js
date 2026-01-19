@@ -7,6 +7,7 @@
  * - Recovers sessions on server restart
  * - Automatic cleanup of expired sessions
  * - Mode management (default, acceptEdits, plan)
+ * - Allowed tools tracking (for "Allow All" permission persistence)
  *
  * @module session-manager
  */
@@ -48,6 +49,9 @@ class SessionManager {
         // Load message history from database
         const messages = sessionDatabase.getMessages(dbSession.id);
 
+        // Load allowed tools from database
+        const allowedTools = new Set(sessionDatabase.getAllowedTools(dbSession.id));
+
         // Store metadata only - process will be created when user joins
         this.sessions.set(dbSession.id, {
           id: dbSession.id,
@@ -58,6 +62,7 @@ class SessionManager {
           lastActivity: dbSession.last_activity,
           workingDirectory: dbSession.working_directory,
           mode: dbSession.mode || 'default',
+          allowedTools, // Tools approved via "Allow All"
           persisted: true // Flag indicating this was loaded from DB
         });
       }
@@ -129,7 +134,8 @@ class SessionManager {
       createdAt: now,
       lastActivity: now,
       workingDirectory,
-      mode: 'default'
+      mode: 'default',
+      allowedTools: new Set() // Tools approved via "Allow All"
     };
 
     this.sessions.set(id, session);
@@ -160,6 +166,12 @@ class SessionManager {
       // Restore mode if set
       if (session.mode && typeof process.setMode === 'function') {
         process.setMode(session.mode);
+      }
+
+      // Restore allowed tools if any
+      if (session.allowedTools && session.allowedTools.size > 0) {
+        process.setAllowedTools(session.allowedTools);
+        console.log(`Restored ${session.allowedTools.size} allowed tool(s) for session ${id}`);
       }
 
       session.process = process;
@@ -274,6 +286,67 @@ class SessionManager {
       console.error('Error updating session mode in database:', err.message);
     }
 
+    return true;
+  }
+
+  // Allowed tools management (for "Allow All" permission persistence)
+  addAllowedTool(id, toolName) {
+    const session = this.sessions.get(id);
+    if (!session) return false;
+
+    // Add to session memory
+    if (!session.allowedTools) {
+      session.allowedTools = new Set();
+    }
+    session.allowedTools.add(toolName);
+
+    // Also add to process if running
+    if (session.process) {
+      session.process.addAllowedTool(toolName);
+    }
+
+    // Persist to database
+    try {
+      sessionDatabase.addAllowedTool(id, toolName);
+    } catch (err) {
+      console.error('Error persisting allowed tool to database:', err.message);
+    }
+
+    console.log(`Added allowed tool "${toolName}" to session ${id}`);
+    return true;
+  }
+
+  isToolAllowed(id, toolName) {
+    const session = this.sessions.get(id);
+    if (!session || !session.allowedTools) return false;
+    return session.allowedTools.has(toolName);
+  }
+
+  getAllowedTools(id) {
+    const session = this.sessions.get(id);
+    if (!session || !session.allowedTools) return [];
+    return Array.from(session.allowedTools);
+  }
+
+  clearAllowedTools(id) {
+    const session = this.sessions.get(id);
+    if (!session) return false;
+
+    session.allowedTools = new Set();
+
+    // Also clear in process if running
+    if (session.process) {
+      session.process.clearAllowedTools();
+    }
+
+    // Persist to database
+    try {
+      sessionDatabase.clearAllowedTools(id);
+    } catch (err) {
+      console.error('Error clearing allowed tools in database:', err.message);
+    }
+
+    console.log(`Cleared all allowed tools for session ${id}`);
     return true;
   }
 

@@ -7,6 +7,7 @@ class ChatUI {
     this.currentAssistantMessage = null;
     this.currentToolIndicator = null;
     this.currentPrompt = null;
+    this.isPermissionPrompt = false; // Track if current prompt requires user action (should not be auto-removed)
   }
 
   clearMessages() {
@@ -77,17 +78,21 @@ class ChatUI {
 
   finishAssistantMessage() {
     if (this.currentAssistantMessage) {
-      // Final render
+      // Check if message has any content
       if (this.currentAssistantMessage.content) {
+        // Final render
         this.currentAssistantMessage.contentDiv.innerHTML =
           renderMarkdown(this.currentAssistantMessage.content);
-      }
 
-      this.messages.push({
-        role: 'assistant',
-        content: this.currentAssistantMessage.content,
-        element: this.currentAssistantMessage.element
-      });
+        this.messages.push({
+          role: 'assistant',
+          content: this.currentAssistantMessage.content,
+          element: this.currentAssistantMessage.element
+        });
+      } else {
+        // Remove empty message element from DOM
+        this.currentAssistantMessage.element.remove();
+      }
 
       this.currentAssistantMessage = null;
     }
@@ -405,15 +410,26 @@ class ChatUI {
     this.scrollToBottom();
   }
 
-  removePrompt() {
+  removePrompt(force = false) {
+    // Don't auto-remove permission prompts unless forced
+    if (this.currentPrompt && (force || !this.isPermissionPrompt)) {
+      this.currentPrompt.remove();
+      this.currentPrompt = null;
+      this.isPermissionPrompt = false;
+    }
+  }
+
+  // Force remove any prompt (used when user responds to permission prompt)
+  forceRemovePrompt() {
     if (this.currentPrompt) {
       this.currentPrompt.remove();
       this.currentPrompt = null;
+      this.isPermissionPrompt = false;
     }
   }
 
   showPermissionPrompt(data, onResponse) {
-    this.removePrompt();
+    this.forceRemovePrompt();
 
     const promptContainer = document.createElement('div');
     promptContainer.className = 'prompt-container permission-prompt';
@@ -464,7 +480,7 @@ class ChatUI {
     allowBtn.className = 'btn btn-primary permission-btn';
     allowBtn.textContent = 'Allow';
     allowBtn.addEventListener('click', () => {
-      this.removePrompt();
+      this.forceRemovePrompt();
       onResponse(requestId, 'allow', toolInput);
     });
 
@@ -474,7 +490,7 @@ class ChatUI {
     allowAllBtn.textContent = 'Allow All';
     allowAllBtn.title = 'Allow this tool for the rest of the session';
     allowAllBtn.addEventListener('click', () => {
-      this.removePrompt();
+      this.forceRemovePrompt();
       onResponse(requestId, 'allow_all', toolInput);
     });
 
@@ -483,7 +499,7 @@ class ChatUI {
     denyBtn.className = 'btn btn-danger permission-btn';
     denyBtn.textContent = 'Deny';
     denyBtn.addEventListener('click', () => {
-      this.removePrompt();
+      this.forceRemovePrompt();
       onResponse(requestId, 'deny', toolInput);
     });
 
@@ -494,11 +510,12 @@ class ChatUI {
 
     this.container.appendChild(promptContainer);
     this.currentPrompt = promptContainer;
+    this.isPermissionPrompt = true; // Mark as permission prompt - should not be auto-removed
     this.scrollToBottom();
   }
 
   showExitPlanModePrompt(data, onResponse) {
-    this.removePrompt();
+    this.forceRemovePrompt();
 
     const promptContainer = document.createElement('div');
     promptContainer.className = 'prompt-container permission-prompt exit-plan-mode-prompt';
@@ -536,7 +553,7 @@ class ChatUI {
     approveBtn.className = 'btn btn-primary permission-btn';
     approveBtn.textContent = 'Approve';
     approveBtn.addEventListener('click', () => {
-      this.removePrompt();
+      this.forceRemovePrompt();
       onResponse(requestId, true);
     });
 
@@ -545,7 +562,7 @@ class ChatUI {
     denyBtn.className = 'btn btn-danger permission-btn';
     denyBtn.textContent = 'Stay in Plan Mode';
     denyBtn.addEventListener('click', () => {
-      this.removePrompt();
+      this.forceRemovePrompt();
       onResponse(requestId, false);
     });
 
@@ -555,6 +572,7 @@ class ChatUI {
 
     this.container.appendChild(promptContainer);
     this.currentPrompt = promptContainer;
+    this.isPermissionPrompt = true; // Mark as permission prompt - should not be auto-removed
     this.scrollToBottom();
   }
 

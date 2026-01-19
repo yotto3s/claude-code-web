@@ -11,6 +11,7 @@
  * Schema:
  * - sessions: id, name, working_directory, mode, created_at, last_activity, is_active
  * - messages: id, session_id, role, content, timestamp
+ * - allowed_tools: id, session_id, tool_name, allowed_at (for persisting "Allow All" decisions)
  *
  * @module database
  */
@@ -74,6 +75,17 @@ class SessionDatabase {
       CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
       CREATE INDEX IF NOT EXISTS idx_sessions_last_activity ON sessions(last_activity);
       CREATE INDEX IF NOT EXISTS idx_sessions_is_active ON sessions(is_active);
+
+      CREATE TABLE IF NOT EXISTS allowed_tools (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        allowed_at INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+        UNIQUE(session_id, tool_name)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_allowed_tools_session_id ON allowed_tools(session_id);
     `);
   }
 
@@ -150,6 +162,36 @@ class SessionDatabase {
 
   deleteMessages(sessionId) {
     const stmt = this.db.prepare('DELETE FROM messages WHERE session_id = ?');
+    stmt.run(sessionId);
+  }
+
+  // Allowed Tools CRUD operations (for "Allow All" persistence)
+  addAllowedTool(sessionId, toolName) {
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO allowed_tools (session_id, tool_name, allowed_at)
+      VALUES (?, ?, ?)
+    `);
+    stmt.run(sessionId, toolName, Date.now());
+    console.log(`[Database] Tool "${toolName}" allowed for session ${sessionId}`);
+  }
+
+  getAllowedTools(sessionId) {
+    const stmt = this.db.prepare('SELECT tool_name FROM allowed_tools WHERE session_id = ?');
+    return stmt.all(sessionId).map(row => row.tool_name);
+  }
+
+  isToolAllowed(sessionId, toolName) {
+    const stmt = this.db.prepare('SELECT 1 FROM allowed_tools WHERE session_id = ? AND tool_name = ?');
+    return stmt.get(sessionId, toolName) !== undefined;
+  }
+
+  removeAllowedTool(sessionId, toolName) {
+    const stmt = this.db.prepare('DELETE FROM allowed_tools WHERE session_id = ? AND tool_name = ?');
+    stmt.run(sessionId, toolName);
+  }
+
+  clearAllowedTools(sessionId) {
+    const stmt = this.db.prepare('DELETE FROM allowed_tools WHERE session_id = ?');
     stmt.run(sessionId);
   }
 

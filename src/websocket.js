@@ -605,15 +605,22 @@ function handlePermissionResponse(ws, msg, getCurrentSession) {
   }
 
   console.log('Calling sendControlResponse with:', msg.requestId, msg.decision);
-  const success = session.process.sendControlResponse(
+  const result = session.process.sendControlResponse(
     msg.requestId,
     msg.decision,
     msg.toolInput || null  // Only pass if we have actual modifications
   );
 
-  console.log('sendControlResponse returned:', success);
-  if (!success) {
+  console.log('sendControlResponse returned:', result);
+  if (!result.success) {
     sendError(ws, 'Failed to send permission response');
+    return;
+  }
+
+  // If "Allow All" was selected, persist the allowed tool to session manager
+  if (msg.decision === 'allow_all' && result.toolName) {
+    sessionManager.addAllowedTool(session.id, result.toolName);
+    console.log(`Persisted "Allow All" for tool "${result.toolName}" in session ${session.id}`);
   }
 }
 

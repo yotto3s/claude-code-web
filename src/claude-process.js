@@ -7,6 +7,7 @@
  * - Agent tracking for background tasks
  * - Permission request/response flow
  * - AskUserQuestion handling
+ * - Allowed tools tracking (for "Allow All" permission persistence)
  *
  * @module claude-process
  */
@@ -64,6 +65,8 @@ class ClaudeProcess extends EventEmitter {
     this.activeAgents = new Map();
     /** @type {string[]} Stack of active agent taskIds for tracking nested agents */
     this.agentContextStack = [];
+    /** @type {Set<string>} Tools that have been approved via "Allow All" */
+    this.allowedTools = new Set();
   }
 
   /**
@@ -80,6 +83,44 @@ class ClaudeProcess extends EventEmitter {
       console.log(`[ClaudeProcess] Mode changed from '${this.mode}' to '${mode}'`);
       this.mode = mode;
     }
+  }
+
+  /**
+   * Set the allowed tools from a Set (used when recovering sessions).
+   *
+   * @param {Set<string>} toolsSet - Set of tool names to allow
+   */
+  setAllowedTools(toolsSet) {
+    this.allowedTools = new Set(toolsSet);
+    console.log(`[ClaudeProcess] Allowed tools initialized:`, Array.from(this.allowedTools));
+  }
+
+  /**
+   * Add a tool to the allowed list (called when user clicks "Allow All").
+   *
+   * @param {string} toolName - Name of the tool to allow
+   */
+  addAllowedTool(toolName) {
+    this.allowedTools.add(toolName);
+    console.log(`[ClaudeProcess] Tool "${toolName}" added to allowed list`);
+  }
+
+  /**
+   * Check if a tool has been approved via "Allow All".
+   *
+   * @param {string} toolName - Name of the tool to check
+   * @returns {boolean} Whether the tool is allowed
+   */
+  isToolAllowed(toolName) {
+    return this.allowedTools.has(toolName);
+  }
+
+  /**
+   * Clear all allowed tools (reset permissions).
+   */
+  clearAllowedTools() {
+    this.allowedTools.clear();
+    console.log(`[ClaudeProcess] All allowed tools cleared`);
   }
 
   async start() {
@@ -129,6 +170,12 @@ class ClaudeProcess extends EventEmitter {
               console.log(`[canUseTool] Auto-approving edit tool: ${toolName}`);
               return { behavior: 'allow', updatedInput: input };
             }
+          }
+
+          // Check if tool was previously approved via "Allow All"
+          if (this.isToolAllowed(toolName)) {
+            console.log(`[canUseTool] Tool "${toolName}" pre-approved via Allow All`);
+            return { behavior: 'allow', updatedInput: input };
           }
 
           // Default mode: go through permission flow
@@ -284,6 +331,7 @@ class ClaudeProcess extends EventEmitter {
     // Wait for user response (no timeout)
     return new Promise((resolve, reject) => {
       this.pendingPermissions.set(requestId, {
+        toolName, // Store toolName for "Allow All" persistence
         resolve: (result) => {
           this.pendingPermissions.delete(requestId);
           resolve(result);
@@ -400,10 +448,16 @@ class ClaudeProcess extends EventEmitter {
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) {
       console.log('sendControlResponse: No pending permission for requestId:', requestId);
-      return false;
+      return { success: false, toolName: null };
     }
 
     if (decision === 'allow' || decision === 'allow_all') {
+      // If "Allow All", add tool to allowed list and emit event for persistence
+      if (decision === 'allow_all' && pending.toolName) {
+        this.addAllowedTool(pending.toolName);
+        this.emit('tool_allowed', pending.toolName);
+      }
+
       pending.resolve({
         behavior: 'allow',
         updatedInput: toolInput || undefined
@@ -414,7 +468,7 @@ class ClaudeProcess extends EventEmitter {
         message: 'User denied permission'
       });
     }
-    return true;
+    return { success: true, toolName: pending.toolName };
   }
 
   async cancel() {
