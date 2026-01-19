@@ -91,6 +91,10 @@ class WebSocketClient {
         this.emit('session_deleted', { sessionId: msg.sessionId });
         break;
 
+      case 'session_reset':
+        this.emit('session_reset', { oldSessionId: msg.oldSessionId, session: msg.session });
+        break;
+
       case 'message_sent':
         this.emit('message_sent');
         break;
@@ -258,6 +262,10 @@ class WebSocketClient {
 
   deleteSession(sessionId) {
     return this.send('delete_session', { sessionId });
+  }
+
+  resetSession(sessionId) {
+    return this.send('delete_session', { sessionId, createNew: true });
   }
 
   joinSession(sessionId) {

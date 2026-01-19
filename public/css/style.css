@@ -394,16 +394,47 @@ html, body {
   background: rgba(248, 113, 113, 0.25);
 }
 
-.session-menu-item .session-delete-btn {
+.session-menu-item .session-delete-btn,
+.session-menu-item .session-reset-btn {
   opacity: 0;
 }
 
-.session-menu-item:hover .session-delete-btn {
+.session-menu-item:hover .session-delete-btn,
+.session-menu-item:hover .session-reset-btn {
   opacity: 0.6;
 }
 
-.session-menu-item:hover .session-delete-btn:hover {
+.session-menu-item:hover .session-delete-btn:hover,
+.session-menu-item:hover .session-reset-btn:hover {
   opacity: 1;
+}
+
+/* Session Reset Button */
+.session-reset-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.session-reset-btn:hover {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--accent-primary);
+  opacity: 1;
+}
+
+.session-reset-btn:active {
+  background: rgba(59, 130, 246, 0.25);
 }
 
 .new-session-btn {

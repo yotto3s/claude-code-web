@@ -173,7 +173,7 @@ async function handleMessage(ws, msg, ctx) {
       break;
 
     case 'delete_session':
-      handleDeleteSession(ws, msg, getCurrentSession);
+      handleDeleteSession(ws, msg, getCurrentSession, setSession);
       break;
 
     case 'list_agents':
@@ -317,20 +317,52 @@ function handleRenameSession(ws, msg, getCurrentSession) {
   }
 }
 
-function handleDeleteSession(ws, msg, getCurrentSession) {
+function handleDeleteSession(ws, msg, getCurrentSession, setSession) {
   if (!msg.sessionId) {
     sendError(ws, 'Session ID is required');
     return;
   }
 
   const currentSession = getCurrentSession();
+  const isCurrentSession = currentSession && currentSession.id === msg.sessionId;
 
-  // Check if trying to delete current session
-  if (currentSession && currentSession.id === msg.sessionId) {
-    sendError(ws, 'Cannot delete the currently active session. Please switch to another session first.');
+  // If trying to delete current session, must use createNew flag to reset it
+  if (isCurrentSession) {
+    if (!msg.createNew) {
+      sendError(ws, 'Cannot delete the currently active session. Use reset to delete and create a new session.');
+      return;
+    }
+
+    // Save working directory before deletion
+    const workingDirectory = currentSession.workingDirectory;
+
+    // Delete the current session
+    const deleteSuccess = sessionManager.removeSession(msg.sessionId);
+    if (!deleteSuccess) {
+      sendError(ws, 'Failed to delete session');
+      return;
+    }
+
+    // Create new session in same directory
+    const newSession = sessionManager.createSession(workingDirectory);
+    setSession(newSession);
+    setupSessionListeners(ws, newSession);
+
+    // Send reset confirmation with new session info
+    safeSend(ws, {
+      type: 'session_reset',
+      oldSessionId: msg.sessionId,
+      session: {
+        id: newSession.id,
+        name: newSession.name,
+        createdAt: newSession.createdAt,
+        workingDirectory: newSession.workingDirectory
+      }
+    });
     return;
   }
 
+  // For non-current sessions, just delete
   const success = sessionManager.removeSession(msg.sessionId);
 
   if (success) {

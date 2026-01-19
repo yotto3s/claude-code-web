@@ -273,6 +273,9 @@ class App {
     // Session deleted handler
     this.ws.on('session_deleted', (data) => this.onSessionDeleted(data));
 
+    // Session reset handler
+    this.ws.on('session_reset', (data) => this.onSessionReset(data));
+
     // Tool execution handler
     this.ws.on('tool_use', (data) => this.onToolUse(data));
 
@@ -565,20 +568,28 @@ class App {
             <span>${session.historyLength} messages</span>
           </span>
         </div>
-        ${!isCurrentSession ? `
+        ${isCurrentSession ? `
+        <button class="session-reset-btn" title="Reset session (delete and create new)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 4v6h-6"></path>
+            <path d="M1 20v-6h6"></path>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </button>
+        ` : `
         <button class="session-delete-btn" title="Delete session">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
           </svg>
         </button>
-        ` : ''}
+        `}
       `;
 
       // Click on item to switch session
       item.addEventListener('click', (e) => {
-        // Don't switch if clicking the delete button
-        if (e.target.closest('.session-delete-btn')) {
+        // Don't switch if clicking the delete or reset button
+        if (e.target.closest('.session-delete-btn') || e.target.closest('.session-reset-btn')) {
           return;
         }
         e.stopPropagation();
@@ -591,6 +602,15 @@ class App {
         deleteBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           this.deleteSession(session.id, sessionName);
+        });
+      }
+
+      // Reset button click handler
+      const resetBtn = item.querySelector('.session-reset-btn');
+      if (resetBtn) {
+        resetBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.resetCurrentSession();
         });
       }
 
@@ -1255,6 +1275,31 @@ class App {
     this.ws.listSessions();
   }
 
+  onSessionReset(data) {
+    // Clear chat and update to new session
+    this.chat.clear();
+    this.currentSessionId = data.session.id;
+    this.currentSessionName = data.session.name;
+    this.currentWorkingDirectory = data.session.workingDirectory;
+
+    // Update session info display
+    const sessionInfo = document.getElementById('session-info');
+    if (sessionInfo) {
+      const timeStr = new Date(data.session.createdAt).toLocaleTimeString();
+      const displayName = data.session.name || `Session (${timeStr})`;
+      sessionInfo.textContent = displayName;
+    }
+
+    // Update localStorage
+    localStorage.setItem('sessionId', data.session.id);
+
+    // Refresh session lists
+    this.ws.listSessions();
+
+    // Close the session menu if open
+    this.elements.sessionMenu.classList.remove('show');
+  }
+
   deleteSession(sessionId, sessionName) {
     // Confirm deletion
     const confirmMessage = `Are you sure you want to delete "${sessionName || 'this session'}"?\n\nThis action cannot be undone.`;
@@ -1264,6 +1309,20 @@ class App {
 
     // Send delete request
     this.ws.deleteSession(sessionId);
+  }
+
+  resetCurrentSession() {
+    if (!this.currentSessionId) {
+      return;
+    }
+
+    const confirmMessage = 'Are you sure you want to reset this session?\n\nThis will delete all messages and create a new session in the same directory.';
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    // Send reset request
+    this.ws.resetSession(this.currentSessionId);
   }
 
   renameCurrentSession() {
