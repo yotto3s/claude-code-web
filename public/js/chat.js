@@ -57,12 +57,6 @@ class ChatUI {
       contentDiv: msg.querySelector('.message-content')
     };
 
-    // Add typing indicator
-    this.currentAssistantMessage.contentDiv.innerHTML = `
-      <div class="typing-indicator">
-        <span></span><span></span><span></span>
-      </div>
-    `;
 
     this.scrollToBottom();
     return msg;
@@ -71,12 +65,6 @@ class ChatUI {
   appendToAssistantMessage(text) {
     if (!this.currentAssistantMessage) {
       this.startAssistantMessage();
-    }
-
-    // Remove typing indicator if present
-    const typing = this.currentAssistantMessage.contentDiv.querySelector('.typing-indicator');
-    if (typing) {
-      typing.remove();
     }
 
     this.currentAssistantMessage.content += text;
@@ -90,12 +78,6 @@ class ChatUI {
 
   finishAssistantMessage() {
     if (this.currentAssistantMessage) {
-      // Remove any remaining typing indicator
-      const typing = this.currentAssistantMessage.contentDiv.querySelector('.typing-indicator');
-      if (typing) {
-        typing.remove();
-      }
-
       // Final render
       if (this.currentAssistantMessage.content) {
         this.currentAssistantMessage.contentDiv.innerHTML =
