@@ -296,6 +296,13 @@ class SessionManager {
       clearInterval(this.cleanupInterval);
     }
 
+    // Close database connection properly (triggers WAL checkpoint)
+    try {
+      sessionDatabase.close();
+    } catch (err) {
+      console.error('Error closing database:', err.message);
+    }
+
     console.log('All sessions terminated');
   }
 

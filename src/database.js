@@ -16,6 +16,15 @@ class SessionDatabase {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.initSchema();
+
+    // Checkpoint WAL periodically (every 5 minutes) to ensure data is written to main DB
+    this.checkpointInterval = setInterval(() => {
+      try {
+        this.db.pragma('wal_checkpoint(PASSIVE)');
+      } catch (err) {
+        console.error('Error during WAL checkpoint:', err.message);
+      }
+    }, 5 * 60 * 1000);
   }
 
   initSchema() {
@@ -51,7 +60,7 @@ class SessionDatabase {
       INSERT INTO sessions (id, name, working_directory, mode, created_at, last_activity, is_active)
       VALUES (?, ?, ?, ?, ?, ?, 1)
     `);
-    stmt.run(
+    const result = stmt.run(
       session.id,
       session.name,
       session.workingDirectory,
@@ -59,6 +68,7 @@ class SessionDatabase {
       session.createdAt,
       session.lastActivity
     );
+    console.log(`[Database] Session ${session.id} persisted (changes: ${result.changes})`);
   }
 
   updateSessionActivity(sessionId, timestamp) {
@@ -128,7 +138,22 @@ class SessionDatabase {
   }
 
   close() {
+    // Clear checkpoint interval
+    if (this.checkpointInterval) {
+      clearInterval(this.checkpointInterval);
+      this.checkpointInterval = null;
+    }
+
+    // Final checkpoint to ensure all WAL data is written to main database
+    try {
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+      console.log('[Database] WAL checkpoint completed');
+    } catch (err) {
+      console.error('[Database] Error during final checkpoint:', err.message);
+    }
+
     this.db.close();
+    console.log('[Database] Connection closed');
   }
 }
 
