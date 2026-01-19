@@ -289,7 +289,7 @@ function handleJoinSession(ws, msg, setSession) {
       name: session.name,
       createdAt: session.createdAt,
       workingDirectory: session.workingDirectory,
-      mode: session.mode || 'default',
+      mode: session.mode || 'plan',
       webSearchEnabled: session.webSearchEnabled || false,
       recovered: session.persisted || false, // Let client know this was recovered
     },
@@ -747,9 +747,9 @@ function handleSetMode(ws, msg, getCurrentSession) {
     return;
   }
 
-  const validModes = ['default', 'acceptEdits', 'plan'];
+  const validModes = ['acceptEdits', 'plan'];
   if (!msg.mode || !validModes.includes(msg.mode)) {
-    sendError(ws, 'Invalid mode. Must be one of: default, acceptEdits, plan');
+    sendError(ws, 'Invalid mode. Must be one of: acceptEdits, plan');
     return;
   }
 

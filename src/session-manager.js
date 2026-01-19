@@ -61,7 +61,7 @@ class SessionManager {
           createdAt: dbSession.created_at,
           lastActivity: dbSession.last_activity,
           workingDirectory: dbSession.working_directory,
-          mode: dbSession.mode || 'default',
+          mode: dbSession.mode || 'plan',
           allowedTools, // Tools approved via "Allow All"
           sdkSessionId: dbSession.sdk_session_id || null, // SDK session ID for resume
           webSearchEnabled: Boolean(dbSession.web_search_enabled), // Web search toggle
@@ -135,7 +135,7 @@ class SessionManager {
       createdAt: now,
       lastActivity: now,
       workingDirectory,
-      mode: 'default',
+      mode: 'plan',
       allowedTools: new Set(), // Tools approved via "Allow All"
       sdkSessionId: null, // Will be set when SDK initializes
       webSearchEnabled: false, // Web search toggle (default off)

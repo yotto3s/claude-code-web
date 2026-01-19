@@ -49,7 +49,7 @@ function createTestDb() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       working_directory TEXT NOT NULL,
-      mode TEXT DEFAULT 'default',
+      mode TEXT DEFAULT 'plan',
       sdk_session_id TEXT,
       web_search_enabled INTEGER DEFAULT 0,
       created_at INTEGER NOT NULL,
@@ -115,7 +115,7 @@ describe('SessionDatabase', () => {
         id: 'test-123',
         name: 'Test Session',
         workingDirectory: '/tmp/test',
-        mode: 'default',
+        mode: 'plan',
         createdAt: Date.now(),
         lastActivity: Date.now(),
       };

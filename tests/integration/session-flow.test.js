@@ -32,7 +32,7 @@ class TestSessionManager {
       id,
       name: sessionName,
       workingDirectory,
-      mode: 'default',
+      mode: 'plan',
       createdAt: now,
       lastActivity: now,
       history: [],
@@ -44,7 +44,7 @@ class TestSessionManager {
     this.db.prepare(`
       INSERT INTO sessions (id, name, working_directory, mode, created_at, last_activity, is_active)
       VALUES (?, ?, ?, ?, ?, ?, 1)
-    `).run(id, sessionName, workingDirectory, 'default', now, now);
+    `).run(id, sessionName, workingDirectory, 'plan', now, now);
 
     this.sessions.set(id, session);
     return session;
@@ -172,7 +172,7 @@ class TestSessionManager {
         id: dbSession.id,
         name: dbSession.name,
         workingDirectory: dbSession.working_directory,
-        mode: dbSession.mode || 'default',
+        mode: dbSession.mode || 'plan',
         createdAt: dbSession.created_at,
         lastActivity: dbSession.last_activity,
         history: messages,
@@ -212,7 +212,7 @@ describe('Session Flow Integration', () => {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         working_directory TEXT NOT NULL,
-        mode TEXT DEFAULT 'default',
+        mode TEXT DEFAULT 'plan',
         sdk_session_id TEXT,
         web_search_enabled INTEGER DEFAULT 0,
         created_at INTEGER NOT NULL,
@@ -261,7 +261,7 @@ describe('Session Flow Integration', () => {
       expect(session.id).toBeDefined();
       expect(session.name).toBe('My Project');
       expect(session.workingDirectory).toBe('/home/user/project');
-      expect(session.mode).toBe('default');
+      expect(session.mode).toBe('plan');
     });
 
     it('should generate default name if not provided', () => {

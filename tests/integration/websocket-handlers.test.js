@@ -52,7 +52,7 @@ describe('WebSocket Message Handlers', () => {
         session: {
           id: session.id,
           name: session.name,
-          mode: 'default',
+          mode: 'plan',
           webSearchEnabled: false,
         },
         history: [],
@@ -61,7 +61,7 @@ describe('WebSocket Message Handlers', () => {
       mockWs.send(JSON.stringify(message));
 
       expect(mockWs.messages[0].type).toBe('session_joined');
-      expect(mockWs.messages[0].session.mode).toBe('default');
+      expect(mockWs.messages[0].session.mode).toBe('plan');
       expect(mockWs.messages[0].history).toEqual([]);
     });
 

@@ -13,10 +13,9 @@ class App {
     this.currentWorkingDirectory = null;
 
     // Mode state management
-    this.currentMode = 'default';
-    this.modes = ['default', 'acceptEdits', 'plan'];
+    this.currentMode = 'plan';
+    this.modes = ['acceptEdits', 'plan'];
     this.modeConfig = {
-      default: { icon: '&#128221;', label: 'Default', class: '' },
       acceptEdits: { icon: '&#10003;', label: 'Accept Edits', class: 'mode-accept-edits' },
       plan: { icon: '&#128203;', label: 'Plan Mode', class: 'mode-plan' },
     };
@@ -1221,7 +1220,7 @@ class App {
     if (savedMode && this.modeConfig[savedMode]) {
       this.setMode(savedMode);
     } else {
-      this.setMode('default');
+      this.setMode('plan');
     }
   }
 

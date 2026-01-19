@@ -61,7 +61,7 @@ class SessionDatabase {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         working_directory TEXT NOT NULL,
-        mode TEXT DEFAULT 'default',
+        mode TEXT DEFAULT 'plan',
         sdk_session_id TEXT,
         web_search_enabled INTEGER DEFAULT 0,
         created_at INTEGER NOT NULL,
@@ -127,7 +127,7 @@ class SessionDatabase {
       session.id,
       session.name,
       session.workingDirectory,
-      session.mode || 'default',
+      session.mode || 'plan',
       session.createdAt,
       session.lastActivity
     );

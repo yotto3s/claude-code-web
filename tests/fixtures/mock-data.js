@@ -15,7 +15,7 @@ export function createMockSession(overrides = {}) {
     id: 'test-session-' + Math.random().toString(36).substr(2, 9),
     name: 'Test Session',
     workingDirectory: '/tmp/test',
-    mode: 'default',
+    mode: 'plan',
     createdAt: now,
     lastActivity: now,
     webSearchEnabled: false,
@@ -130,7 +130,7 @@ export const sampleSessions = [
     id: 'session-1',
     name: 'Development Session',
     workingDirectory: '/home/user/project',
-    mode: 'default',
+    mode: 'plan',
     createdAt: Date.now() - 3600000, // 1 hour ago
     lastActivity: Date.now() - 1800000, // 30 minutes ago
   },

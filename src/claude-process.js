@@ -62,8 +62,8 @@ class ClaudeProcess extends EventEmitter {
     this.pendingPrompts = new Map();
     /** @type {boolean} Whether a message is being processed */
     this.isProcessing = false;
-    /** @type {'default'|'acceptEdits'|'plan'} Current operating mode */
-    this.mode = 'default';
+    /** @type {'acceptEdits'|'plan'} Current operating mode */
+    this.mode = 'plan';
     /** @type {Map<string, {description: string, agentType: string, startTime: number}>} Active background agents */
     this.activeAgents = new Map();
     /** @type {string[]} Stack of active agent taskIds for tracking nested agents */
@@ -77,13 +77,12 @@ class ClaudeProcess extends EventEmitter {
   /**
    * Set the operating mode.
    *
-   * @param {'default'|'acceptEdits'|'plan'} mode - The mode to set
-   * - default: Normal operation with permission prompts
+   * @param {'acceptEdits'|'plan'} mode - The mode to set
    * - acceptEdits: Auto-approve file edit operations
    * - plan: Read-only mode, only allows exploration tools
    */
   setMode(mode) {
-    const validModes = ['default', 'acceptEdits', 'plan'];
+    const validModes = ['acceptEdits', 'plan'];
     if (validModes.includes(mode)) {
       console.log(`[ClaudeProcess] Mode changed from '${this.mode}' to '${mode}'`);
       this.mode = mode;
