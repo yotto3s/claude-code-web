@@ -366,6 +366,46 @@ html, body {
   margin-top: 0.125rem;
 }
 
+/* Session Delete Button */
+.session-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.session-delete-btn:hover {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--error-color);
+  opacity: 1;
+}
+
+.session-delete-btn:active {
+  background: rgba(248, 113, 113, 0.25);
+}
+
+.session-menu-item .session-delete-btn {
+  opacity: 0;
+}
+
+.session-menu-item:hover .session-delete-btn {
+  opacity: 0.6;
+}
+
+.session-menu-item:hover .session-delete-btn:hover {
+  opacity: 1;
+}
+
 .new-session-btn {
   width: 100%;
   padding: 0.75rem 1rem;
@@ -1214,14 +1254,35 @@ html, body {
   margin-bottom: 0.25rem;
 }
 
+.session-picker-item-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
 .session-picker-item-name {
   font-size: 1rem;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 0.25rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.session-picker-item .session-delete-btn {
+  opacity: 0;
+  margin-left: 0.5rem;
+}
+
+.session-picker-item:hover .session-delete-btn {
+  opacity: 0.6;
+}
+
+.session-picker-item:hover .session-delete-btn:hover {
+  opacity: 1;
 }
 
 .session-picker-item-time {

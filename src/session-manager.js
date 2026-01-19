@@ -371,6 +371,28 @@ class SessionManager {
     return true;
   }
 
+  removeSession(id) {
+    const session = this.sessions.get(id);
+
+    // Terminate process if exists
+    if (session && session.process) {
+      session.process.terminate();
+    }
+
+    // Remove from memory
+    this.sessions.delete(id);
+
+    // Delete from database (cascades to messages and allowed_tools)
+    try {
+      sessionDatabase.deleteSession(id);
+      console.log(`Removed session ${id}`);
+      return true;
+    } catch (err) {
+      console.error('Error removing session from database:', err.message);
+      return false;
+    }
+  }
+
   terminateAll() {
     // Only terminate processes, but DON'T deactivate sessions in database
     // Sessions should persist across server restarts so users can rejoin them

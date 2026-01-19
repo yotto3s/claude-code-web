@@ -87,6 +87,10 @@ class WebSocketClient {
         this.emit('session_renamed', { sessionId: msg.sessionId, name: msg.name });
         break;
 
+      case 'session_deleted':
+        this.emit('session_deleted', { sessionId: msg.sessionId });
+        break;
+
       case 'message_sent':
         this.emit('message_sent');
         break;
@@ -250,6 +254,10 @@ class WebSocketClient {
 
   renameSession(name) {
     return this.send('rename_session', { name });
+  }
+
+  deleteSession(sessionId) {
+    return this.send('delete_session', { sessionId });
   }
 
   joinSession(sessionId) {

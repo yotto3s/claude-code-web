@@ -270,6 +270,9 @@ class App {
     // Session renamed handler
     this.ws.on('session_renamed', (data) => this.onSessionRenamed(data));
 
+    // Session deleted handler
+    this.ws.on('session_deleted', (data) => this.onSessionDeleted(data));
+
     // Tool execution handler
     this.ws.on('tool_use', (data) => this.onToolUse(data));
 
@@ -552,6 +555,7 @@ class App {
       const created = new Date(session.createdAt);
       const timeStr = created.toLocaleTimeString();
       const sessionName = session.name || `Session (${timeStr})`;
+      const isCurrentSession = session.id === currentId;
 
       item.innerHTML = `
         <div class="session-menu-item-content">
@@ -561,12 +565,34 @@ class App {
             <span>${session.historyLength} messages</span>
           </span>
         </div>
+        ${!isCurrentSession ? `
+        <button class="session-delete-btn" title="Delete session">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
+        ` : ''}
       `;
 
+      // Click on item to switch session
       item.addEventListener('click', (e) => {
+        // Don't switch if clicking the delete button
+        if (e.target.closest('.session-delete-btn')) {
+          return;
+        }
         e.stopPropagation();
         this.switchSession(session.id);
       });
+
+      // Delete button click handler
+      const deleteBtn = item.querySelector('.session-delete-btn');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.deleteSession(session.id, sessionName);
+        });
+      }
 
       list.appendChild(item);
     }
@@ -708,7 +734,15 @@ class App {
       const sessionName = session.name || `Session (${timeStr})`;
 
       item.innerHTML = `
-        <div class="session-picker-item-name" title="${this.escapeHtml(sessionName)}">${this.escapeHtml(sessionName)}</div>
+        <div class="session-picker-item-header-row">
+          <div class="session-picker-item-name" title="${this.escapeHtml(sessionName)}">${this.escapeHtml(sessionName)}</div>
+          <button class="session-delete-btn" title="Delete session">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+        </div>
         <div class="session-picker-item-header">
           <span class="session-picker-item-time">${dateStr} ${timeStr}</span>
           <span class="session-picker-item-messages">${session.historyLength} messages</span>
@@ -716,10 +750,23 @@ class App {
         ${session.workingDirectory ? `<span class="session-picker-item-dir">${session.workingDirectory}</span>` : ''}
       `;
 
-      item.addEventListener('click', () => {
+      // Click on item to join session (but not if clicking delete button)
+      item.addEventListener('click', (e) => {
+        if (e.target.closest('.session-delete-btn')) {
+          return;
+        }
         this.hideSessionPicker();
         this.ws.joinSession(session.id);
       });
+
+      // Delete button click handler
+      const deleteBtn = item.querySelector('.session-delete-btn');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.deleteSession(session.id, sessionName);
+        });
+      }
 
       list.appendChild(item);
     }
@@ -1201,6 +1248,22 @@ class App {
     }
     // Refresh session list to show updated name
     this.ws.listSessions();
+  }
+
+  onSessionDeleted(data) {
+    // Refresh session lists
+    this.ws.listSessions();
+  }
+
+  deleteSession(sessionId, sessionName) {
+    // Confirm deletion
+    const confirmMessage = `Are you sure you want to delete "${sessionName || 'this session'}"?\n\nThis action cannot be undone.`;
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    // Send delete request
+    this.ws.deleteSession(sessionId);
   }
 
   renameCurrentSession() {

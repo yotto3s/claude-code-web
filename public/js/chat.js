@@ -484,11 +484,11 @@ class ChatUI {
       onResponse(requestId, 'allow', toolInput);
     });
 
-    // Allow All button
+    // Always Allow button
     const allowAllBtn = document.createElement('button');
     allowAllBtn.className = 'btn btn-secondary permission-btn';
-    allowAllBtn.textContent = 'Allow All';
-    allowAllBtn.title = 'Allow this tool for the rest of the session';
+    allowAllBtn.textContent = 'Always Allow';
+    allowAllBtn.title = 'Always allow this tool for the rest of the session';
     allowAllBtn.addEventListener('click', () => {
       this.forceRemovePrompt();
       onResponse(requestId, 'allow_all', toolInput);

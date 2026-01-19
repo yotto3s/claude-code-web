@@ -172,6 +172,10 @@ async function handleMessage(ws, msg, ctx) {
       handleRenameSession(ws, msg, getCurrentSession);
       break;
 
+    case 'delete_session':
+      handleDeleteSession(ws, msg, getCurrentSession);
+      break;
+
     case 'list_agents':
       handleListAgents(ws, msg, getCurrentSession);
       break;
@@ -310,6 +314,32 @@ function handleRenameSession(ws, msg, getCurrentSession) {
     });
   } else {
     sendError(ws, 'Failed to rename session');
+  }
+}
+
+function handleDeleteSession(ws, msg, getCurrentSession) {
+  if (!msg.sessionId) {
+    sendError(ws, 'Session ID is required');
+    return;
+  }
+
+  const currentSession = getCurrentSession();
+
+  // Check if trying to delete current session
+  if (currentSession && currentSession.id === msg.sessionId) {
+    sendError(ws, 'Cannot delete the currently active session. Please switch to another session first.');
+    return;
+  }
+
+  const success = sessionManager.removeSession(msg.sessionId);
+
+  if (success) {
+    safeSend(ws, {
+      type: 'session_deleted',
+      sessionId: msg.sessionId
+    });
+  } else {
+    sendError(ws, 'Failed to delete session');
   }
 }
 
