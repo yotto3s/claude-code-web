@@ -9,6 +9,7 @@ class App {
     this.currentTool = null;
     this.currentBrowserPath = null;  // Will be set after fetching home
     this.currentSessionId = null;
+    this.currentSessionName = null;
     this.currentWorkingDirectory = null;
 
     // Mode state management
@@ -50,11 +51,15 @@ class App {
       terminalAddBtn: document.getElementById('terminal-add-btn'),
       terminalCloseBtn: document.getElementById('terminal-close-btn'),
       appContainer: document.querySelector('.app-container'),
+      // Session name display in header
+      sessionNameDisplay: document.getElementById('session-name-display'),
+      sessionDivider: document.getElementById('session-divider'),
       // Modal elements
       modal: document.getElementById('new-session-modal'),
       modalClose: document.getElementById('modal-close'),
       modalCancel: document.getElementById('modal-cancel'),
       modalCreate: document.getElementById('modal-create'),
+      sessionName: document.getElementById('session-name'),
       workingDirectory: document.getElementById('working-directory'),
       browseBtn: document.getElementById('browse-btn'),
       directoryBrowser: document.getElementById('directory-browser'),
@@ -208,6 +213,11 @@ class App {
       this.elements.agentsCloseBtn.addEventListener('click', () => this.closeAgentsPanel());
     }
 
+    // Session name click to rename
+    if (this.elements.sessionNameDisplay) {
+      this.elements.sessionNameDisplay.addEventListener('click', () => this.renameCurrentSession());
+    }
+
     // Close agents panel when clicking outside
     document.addEventListener('click', (e) => {
       if (this.elements.agentsPanel.classList.contains('show') &&
@@ -284,6 +294,9 @@ class App {
     this.ws.on('task_notification', (data) => this.onTaskNotification(data));
     this.ws.on('agents_list', (data) => this.onAgentsList(data));
 
+    // Session renamed handler
+    this.ws.on('session_renamed', (data) => this.onSessionRenamed(data));
+
     try {
       await this.ws.connect();
     } catch (err) {
@@ -309,10 +322,12 @@ class App {
   }
 
   onSessionCreated(session) {
-    console.log('Session created:', session.id);
+    console.log('Session created:', session.id, session.name);
     localStorage.setItem('sessionId', session.id);
     this.currentSessionId = session.id;
+    this.currentSessionName = session.name;
     this.currentWorkingDirectory = session.workingDirectory;
+    this.updateSessionNameDisplay();
     this.chatUI.clearMessages();
     this.ws.listSessions();
 
@@ -326,10 +341,12 @@ class App {
   }
 
   onSessionJoined(data) {
-    console.log('Session joined:', data.session.id);
+    console.log('Session joined:', data.session.id, data.session.name);
     localStorage.setItem('sessionId', data.session.id);
     this.currentSessionId = data.session.id;
+    this.currentSessionName = data.session.name;
     this.currentWorkingDirectory = data.session.workingDirectory;
+    this.updateSessionNameDisplay();
 
     if (data.history && data.history.length > 0) {
       this.chatUI.loadHistory(data.history);
@@ -530,12 +547,16 @@ class App {
 
       const created = new Date(session.createdAt);
       const timeStr = created.toLocaleTimeString();
+      const sessionName = session.name || `Session (${timeStr})`;
 
       item.innerHTML = `
-        <span>Session (${timeStr})</span>
-        <span style="font-size: 0.75rem; color: var(--text-secondary);">
-          ${session.historyLength} messages
-        </span>
+        <div class="session-menu-item-content">
+          <span class="session-menu-item-name" title="${this.escapeHtml(sessionName)}">${this.escapeHtml(sessionName)}</span>
+          <span class="session-menu-item-meta">
+            <span>${timeStr}</span>
+            <span>${session.historyLength} messages</span>
+          </span>
+        </div>
       `;
 
       item.addEventListener('click', (e) => {
@@ -554,19 +575,27 @@ class App {
 
   createNewSession() {
     const workingDirectory = this.elements.workingDirectory.value.trim();
+    const sessionName = this.elements.sessionName ? this.elements.sessionName.value.trim() : '';
     this.closeModal();
     this.elements.sessionMenu.classList.remove('show');
     localStorage.removeItem('sessionId');
-    this.ws.createSession(workingDirectory || undefined);
+    this.ws.createSession(workingDirectory || undefined, sessionName || undefined);
   }
 
   // Modal methods
   openNewSessionModal() {
     this.elements.sessionMenu.classList.remove('show');
+    if (this.elements.sessionName) {
+      this.elements.sessionName.value = '';
+    }
     this.elements.workingDirectory.value = this.currentBrowserPath || '';
     this.elements.directoryBrowser.classList.remove('show');
     this.elements.modal.classList.add('show');
-    this.elements.workingDirectory.focus();
+    if (this.elements.sessionName) {
+      this.elements.sessionName.focus();
+    } else {
+      this.elements.workingDirectory.focus();
+    }
   }
 
   closeModal() {
@@ -672,8 +701,10 @@ class App {
       const created = new Date(session.createdAt);
       const dateStr = created.toLocaleDateString();
       const timeStr = created.toLocaleTimeString();
+      const sessionName = session.name || `Session (${timeStr})`;
 
       item.innerHTML = `
+        <div class="session-picker-item-name" title="${this.escapeHtml(sessionName)}">${this.escapeHtml(sessionName)}</div>
         <div class="session-picker-item-header">
           <span class="session-picker-item-time">${dateStr} ${timeStr}</span>
           <span class="session-picker-item-messages">${session.historyLength} messages</span>
@@ -1064,6 +1095,49 @@ class App {
   onTerminalClosed(data) {
     console.log('Terminal closed:', data);
     this.terminalManager.handleClosed(data.terminalId);
+  }
+
+  // Session naming methods
+  updateSessionNameDisplay() {
+    const nameDisplay = this.elements.sessionNameDisplay;
+    const divider = this.elements.sessionDivider;
+
+    if (nameDisplay && this.currentSessionName) {
+      nameDisplay.textContent = this.currentSessionName;
+      nameDisplay.title = `Click to rename: ${this.currentSessionName}`;
+      nameDisplay.classList.add('visible');
+      if (divider) divider.classList.add('visible');
+    } else if (nameDisplay) {
+      nameDisplay.textContent = '';
+      nameDisplay.classList.remove('visible');
+      if (divider) divider.classList.remove('visible');
+    }
+  }
+
+  onSessionRenamed(data) {
+    if (data.sessionId === this.currentSessionId) {
+      this.currentSessionName = data.name;
+      this.updateSessionNameDisplay();
+    }
+    // Refresh session list to show updated name
+    this.ws.listSessions();
+  }
+
+  renameCurrentSession() {
+    if (!this.currentSessionId) {
+      return;
+    }
+    const currentName = this.currentSessionName || '';
+    const newName = prompt('Enter new session name:', currentName);
+    if (newName !== null && newName.trim() !== '' && newName.trim() !== currentName) {
+      this.ws.renameSession(newName.trim());
+    }
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 }
 

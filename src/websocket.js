@@ -109,6 +109,10 @@ async function handleMessage(ws, msg, ctx) {
       handleListSessions(ws);
       break;
 
+    case 'rename_session':
+      handleRenameSession(ws, msg, getCurrentSession);
+      break;
+
     case 'list_agents':
       handleListAgents(ws, msg, getCurrentSession);
       break;
@@ -163,7 +167,8 @@ function handleCreateSession(ws, msg, setSession) {
       workingDirectory = envInfo.path;
     }
 
-    const session = sessionManager.createSession(workingDirectory);
+    const sessionName = msg.name || null;
+    const session = sessionManager.createSession(workingDirectory, sessionName);
     setSession(session);
 
     setupSessionListeners(ws, session);
@@ -172,6 +177,7 @@ function handleCreateSession(ws, msg, setSession) {
       type: 'session_created',
       session: {
         id: session.id,
+        name: session.name,
         createdAt: session.createdAt,
         workingDirectory: session.workingDirectory
       }
@@ -197,12 +203,40 @@ function handleJoinSession(ws, msg, setSession) {
     type: 'session_joined',
     session: {
       id: session.id,
+      name: session.name,
       createdAt: session.createdAt,
       workingDirectory: session.workingDirectory,
       mode: session.mode || 'default'
     },
     history: session.history
   }));
+}
+
+function handleRenameSession(ws, msg, getCurrentSession) {
+  const session = getCurrentSession();
+
+  if (!session) {
+    sendError(ws, 'No active session');
+    return;
+  }
+
+  if (!msg.name || typeof msg.name !== 'string') {
+    sendError(ws, 'Session name is required');
+    return;
+  }
+
+  const newName = msg.name.trim().substring(0, 100); // Limit to 100 chars
+  const success = sessionManager.renameSession(session.id, newName);
+
+  if (success) {
+    ws.send(JSON.stringify({
+      type: 'session_renamed',
+      sessionId: session.id,
+      name: newName
+    }));
+  } else {
+    sendError(ws, 'Failed to rename session');
+  }
 }
 
 function setupSessionListeners(ws, session) {

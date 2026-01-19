@@ -83,6 +83,10 @@ class WebSocketClient {
         this.emit('sessions_list', msg.sessions);
         break;
 
+      case 'session_renamed':
+        this.emit('session_renamed', { sessionId: msg.sessionId, name: msg.name });
+        break;
+
       case 'message_sent':
         this.emit('message_sent');
         break;
@@ -224,8 +228,12 @@ class WebSocketClient {
     return true;
   }
 
-  createSession(workingDirectory) {
-    return this.send('create_session', { workingDirectory });
+  createSession(workingDirectory, name) {
+    return this.send('create_session', { workingDirectory, name });
+  }
+
+  renameSession(name) {
+    return this.send('rename_session', { name });
   }
 
   joinSession(sessionId) {

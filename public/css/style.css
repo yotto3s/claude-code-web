@@ -225,6 +225,38 @@ html, body {
   background: var(--success-color);
 }
 
+.session-divider {
+  color: var(--border-color);
+  margin: 0 0.25rem;
+  display: none;
+}
+
+.session-divider.visible {
+  display: inline;
+}
+
+.session-name {
+  color: var(--text-primary);
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  transition: background 0.2s;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: none;
+}
+
+.session-name.visible {
+  display: inline-block;
+}
+
+.session-name:hover {
+  background: var(--bg-tertiary);
+}
+
 .header-right {
   display: flex;
   align-items: center;
@@ -292,6 +324,29 @@ html, body {
 
 .session-menu-item.active {
   background: var(--bg-tertiary);
+}
+
+.session-menu-item-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.session-menu-item-name {
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-menu-item-meta {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.125rem;
 }
 
 .new-session-btn {
@@ -1032,6 +1087,16 @@ html, body {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 0.25rem;
+}
+
+.session-picker-item-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-picker-item-time {

@@ -31,7 +31,7 @@ class SessionManager {
     }
   }
 
-  createSession(workingDirectory) {
+  createSession(workingDirectory, name = null) {
     // Check if we've hit the session limit
     if (this.sessions.size >= MAX_SESSIONS) {
       // Find and terminate the oldest inactive session
@@ -61,6 +61,7 @@ class SessionManager {
 
     const session = {
       id,
+      name: name || `Session ${new Date(now).toLocaleString()}`,
       process,
       history: [],
       createdAt: now,
@@ -70,7 +71,7 @@ class SessionManager {
     };
 
     this.sessions.set(id, session);
-    console.log(`Created session ${id}`);
+    console.log(`Created session ${id} (${session.name})`);
 
     return session;
   }
@@ -116,6 +117,16 @@ class SessionManager {
     return session ? session.history : [];
   }
 
+  renameSession(id, newName) {
+    const session = this.sessions.get(id);
+    if (!session) return false;
+
+    session.name = newName || `Session ${new Date().toLocaleString()}`;
+    session.lastActivity = Date.now();
+    console.log(`Renamed session ${id} to "${session.name}"`);
+    return true;
+  }
+
   terminateSession(id) {
     const session = this.sessions.get(id);
     if (!session) return false;
@@ -146,6 +157,7 @@ class SessionManager {
     for (const [id, session] of this.sessions) {
       sessions.push({
         id,
+        name: session.name,
         createdAt: session.createdAt,
         lastActivity: session.lastActivity,
         historyLength: session.history.length,
