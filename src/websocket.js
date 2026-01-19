@@ -349,6 +349,11 @@ function setupSessionListeners(ws, session) {
     // Restart the Claude process for the same session so user can continue
     session.process.start();
     setupSessionListeners(ws, session);
+
+    // Restore the mode from session to the restarted process
+    if (session.mode && typeof session.process.setMode === 'function') {
+      session.process.setMode(session.mode);
+    }
   });
 
   proc.on('stderr', (text) => {

@@ -84,6 +84,8 @@ html, body {
 
 .login-header p {
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   font-size: 0.9rem;
 }
 
@@ -102,6 +104,8 @@ html, body {
 .form-group label {
   font-size: 0.875rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .form-group input {
@@ -121,6 +125,8 @@ html, body {
 
 .form-group input::placeholder {
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   opacity: 0.6;
 }
 
@@ -168,6 +174,8 @@ html, body {
 
 .login-footer p {
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   font-size: 0.8rem;
 }
 
@@ -198,12 +206,16 @@ html, body {
   display: flex;
   align-items: center;
   gap: 1rem;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
 }
 
 .logo {
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--accent-primary);
+  flex-shrink: 0;
 }
 
 .session-indicator {
@@ -212,6 +224,8 @@ html, body {
   gap: 0.5rem;
   font-size: 0.875rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .status-dot {
@@ -261,6 +275,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-shrink: 0;
 }
 
 .icon-btn {
@@ -344,6 +359,8 @@ html, body {
 .session-menu-item-meta {
   font-size: 0.75rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   display: flex;
   gap: 0.5rem;
   margin-top: 0.125rem;
@@ -411,6 +428,8 @@ html, body {
   margin-top: 0.25rem;
   font-size: 0.75rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .message.user .message-meta {
@@ -427,6 +446,8 @@ html, body {
   border-radius: 6px;
   font-size: 0.8rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   margin: 0.5rem 0;
 }
 
@@ -513,6 +534,8 @@ html, body {
 .code-language {
   font-size: 0.75rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   text-transform: uppercase;
 }
 
@@ -520,6 +543,8 @@ html, body {
   background: transparent;
   border: none;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   cursor: pointer;
   padding: 0.25rem 0.5rem;
   font-size: 0.75rem;
@@ -593,6 +618,8 @@ html, body {
 
 .input-field textarea::placeholder {
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   opacity: 0.6;
 }
 
@@ -667,6 +694,8 @@ html, body {
   text-align: center;
   padding: 2rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .welcome-message h2 {
@@ -716,6 +745,8 @@ html, body {
 .device-info p {
   font-size: 0.875rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .device-actions {
@@ -857,6 +888,8 @@ html, body {
   background: transparent;
   border: none;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   font-size: 1.5rem;
   cursor: pointer;
   padding: 0;
@@ -937,6 +970,8 @@ html, body {
   background: transparent;
   border: none;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   cursor: pointer;
   padding: 0.25rem;
   border-radius: 4px;
@@ -960,6 +995,8 @@ html, body {
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
   font-size: 0.8rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -990,6 +1027,8 @@ html, body {
 
 .browser-item svg {
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   flex-shrink: 0;
 }
 
@@ -1004,6 +1043,8 @@ html, body {
   padding: 1rem;
   text-align: center;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   font-size: 0.875rem;
 }
 
@@ -1108,6 +1149,8 @@ html, body {
 .session-picker-item-messages {
   font-size: 0.75rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   background: var(--bg-tertiary);
   padding: 0.125rem 0.5rem;
   border-radius: 10px;
@@ -1116,6 +1159,8 @@ html, body {
 .session-picker-item-dir {
   font-size: 0.8rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1125,6 +1170,8 @@ html, body {
 .session-picker-empty {
   text-align: center;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   padding: 2rem 1rem;
   font-size: 0.9rem;
 }
@@ -1132,6 +1179,8 @@ html, body {
 .session-picker-loading {
   text-align: center;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   padding: 2rem 1rem;
 }
 
@@ -1187,6 +1236,8 @@ html, body {
   background: var(--bg-secondary);
   border: none;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   font-size: 0.75rem;
   cursor: pointer;
   border-radius: 4px 4px 0 0;
@@ -1214,6 +1265,8 @@ html, body {
   border: none;
   background: transparent;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   cursor: pointer;
   border-radius: 2px;
   padding: 0;
@@ -1228,6 +1281,8 @@ html, body {
   background: transparent;
   border: none;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   cursor: pointer;
   padding: 0.25rem;
   display: flex;
@@ -1246,6 +1301,8 @@ html, body {
 .terminal-title {
   font-size: 0.875rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   font-weight: 500;
 }
 
@@ -1253,6 +1310,8 @@ html, body {
   background: transparent;
   border: none;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   cursor: pointer;
   padding: 0.25rem;
   display: flex;
@@ -1283,6 +1342,8 @@ html, body {
   background: transparent;
   border: none;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   cursor: pointer;
   padding: 0.5rem;
   display: flex;
@@ -1398,6 +1459,8 @@ html, body {
 .prompt-option-desc {
   font-size: 0.8rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   margin-top: 0.25rem;
   line-height: 1.4;
 }
@@ -1425,6 +1488,8 @@ html, body {
 
 .prompt-custom input::placeholder {
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   opacity: 0.7;
 }
 
@@ -1448,6 +1513,8 @@ html, body {
 .prompt-cancel:hover {
   background: var(--bg-tertiary);
   border-color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* Responsive Prompt */
@@ -1517,6 +1584,8 @@ html, body {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.8rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   white-space: pre-wrap;
   word-break: break-all;
 }
@@ -1569,6 +1638,8 @@ html, body {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   cursor: pointer;
   transition: all 0.2s;
   flex-shrink: 0;
@@ -1577,6 +1648,8 @@ html, body {
 
 .mode-btn:hover {
   border-color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   color: var(--text-primary);
   background: var(--bg-primary);
 }
@@ -1698,6 +1771,8 @@ html, body {
 .slash-command-desc {
   font-size: 0.8rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   margin-top: 0.125rem;
 }
 
@@ -1776,6 +1851,8 @@ html, body {
 .agents-empty {
   text-align: center;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   padding: 2rem 1rem;
   font-size: 0.875rem;
 }
@@ -1802,6 +1879,8 @@ html, body {
   font-size: 0.7rem;
   font-family: monospace;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .agent-status {
@@ -1832,6 +1911,8 @@ html, body {
 .agent-status.stopped {
   background: rgba(156, 163, 175, 0.15);
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .agent-status-dot {
@@ -1881,6 +1962,8 @@ html, body {
 .agent-item-summary {
   font-size: 0.7rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
   margin-top: 0.25rem;
   padding-top: 0.25rem;
   border-top: 1px solid var(--border-color);
@@ -1894,6 +1977,8 @@ html, body {
   justify-content: space-between;
   font-size: 0.7rem;
   color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .agent-elapsed-time {
