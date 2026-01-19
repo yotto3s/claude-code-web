@@ -13,6 +13,14 @@ class ClaudeProcess extends EventEmitter {
     this.pendingPermissions = new Map(); // requestId -> {resolve, reject}
     this.pendingPrompts = new Map(); // requestId -> {resolve} for AskUserQuestion
     this.isProcessing = false;
+    this.mode = 'default'; // 'default', 'acceptEdits', or 'plan'
+  }
+
+  setMode(mode) {
+    const validModes = ['default', 'acceptEdits', 'plan'];
+    if (validModes.includes(mode)) {
+      this.mode = mode;
+    }
   }
 
   async start() {
@@ -30,7 +38,16 @@ class ClaudeProcess extends EventEmitter {
           if (toolName === 'AskUserQuestion') {
             return this.handleAskUserQuestion(toolName, input, options);
           }
-          // Handle other tools that need permission
+
+          // Accept Edits mode: auto-approve file operations
+          if (this.mode === 'acceptEdits') {
+            const editTools = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
+            if (editTools.includes(toolName)) {
+              return { behavior: 'allow' };
+            }
+          }
+
+          // Default and Plan mode: go through permission flow
           return this.handlePermissionRequest(toolName, input, options);
         }
       }

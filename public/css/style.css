@@ -1490,3 +1490,71 @@ html, body {
     width: 100%;
   }
 }
+
+/* Mode Toggle Button */
+.mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  font-size: 0.875rem;
+}
+
+.mode-btn:hover {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+}
+
+.mode-btn .mode-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.mode-btn .mode-label {
+  font-weight: 500;
+}
+
+/* Accept Edits mode - green accent */
+.mode-btn.mode-accept-edits {
+  border-color: var(--success-color);
+  color: var(--success-color);
+  background: rgba(74, 222, 128, 0.1);
+}
+
+.mode-btn.mode-accept-edits:hover {
+  background: rgba(74, 222, 128, 0.2);
+  border-color: var(--success-color);
+  color: var(--success-color);
+}
+
+/* Plan mode - purple accent */
+.mode-btn.mode-plan {
+  border-color: #a78bfa;
+  color: #a78bfa;
+  background: rgba(167, 139, 250, 0.1);
+}
+
+.mode-btn.mode-plan:hover {
+  background: rgba(167, 139, 250, 0.2);
+  border-color: #a78bfa;
+  color: #a78bfa;
+}
+
+/* Responsive Mode Button */
+@media (max-width: 768px) {
+  .mode-btn .mode-label {
+    display: none;
+  }
+
+  .mode-btn {
+    padding: 0.5rem;
+  }
+}

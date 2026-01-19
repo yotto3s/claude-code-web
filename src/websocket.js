@@ -125,6 +125,10 @@ async function handleMessage(ws, msg, ctx) {
       handleTerminalClose(ws, msg);
       break;
 
+    case 'set_mode':
+      handleSetMode(ws, msg, getCurrentSession);
+      break;
+
     default:
       sendError(ws, `Unknown message type: ${msg.type}`);
   }
@@ -190,7 +194,8 @@ function handleJoinSession(ws, msg, setSession) {
     session: {
       id: session.id,
       createdAt: session.createdAt,
-      workingDirectory: session.workingDirectory
+      workingDirectory: session.workingDirectory,
+      mode: session.mode || 'default'
     },
     history: session.history
   }));
@@ -435,6 +440,35 @@ function handleListSessions(ws) {
   ws.send(JSON.stringify({
     type: 'sessions_list',
     sessions
+  }));
+}
+
+function handleSetMode(ws, msg, getCurrentSession) {
+  const session = getCurrentSession();
+
+  if (!session) {
+    sendError(ws, 'No active session');
+    return;
+  }
+
+  const validModes = ['default', 'acceptEdits', 'plan'];
+  if (!msg.mode || !validModes.includes(msg.mode)) {
+    sendError(ws, 'Invalid mode. Must be one of: default, acceptEdits, plan');
+    return;
+  }
+
+  // Store mode on session
+  session.mode = msg.mode;
+
+  // Set mode on claude process
+  if (session.process && typeof session.process.setMode === 'function') {
+    session.process.setMode(msg.mode);
+  }
+
+  // Send confirmation
+  ws.send(JSON.stringify({
+    type: 'mode_changed',
+    mode: msg.mode
   }));
 }
 

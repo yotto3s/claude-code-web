@@ -11,6 +11,15 @@ class App {
     this.currentSessionId = null;
     this.currentWorkingDirectory = null;
 
+    // Mode state management
+    this.currentMode = 'default';
+    this.modes = ['default', 'acceptEdits', 'plan'];
+    this.modeConfig = {
+      default: { icon: '&#128221;', label: 'Default', class: '' },
+      acceptEdits: { icon: '&#10003;', label: 'Accept Edits', class: 'mode-accept-edits' },
+      plan: { icon: '&#128203;', label: 'Plan Mode', class: 'mode-plan' }
+    };
+
     this.init();
   }
 
@@ -53,7 +62,9 @@ class App {
       sessionPicker: document.getElementById('session-picker'),
       sessionPickerList: document.getElementById('session-picker-list'),
       sessionPickerNew: document.getElementById('session-picker-new'),
-      logoutBtn: document.getElementById('logout-btn')
+      logoutBtn: document.getElementById('logout-btn'),
+      // Mode toggle button
+      modeToggleBtn: document.getElementById('mode-toggle-btn')
     };
 
     // Setup event listeners
@@ -142,6 +153,11 @@ class App {
     if (this.elements.logoutBtn) {
       this.elements.logoutBtn.addEventListener('click', () => this.logout());
     }
+
+    // Mode toggle button
+    if (this.elements.modeToggleBtn) {
+      this.elements.modeToggleBtn.addEventListener('click', () => this.cycleMode());
+    }
   }
 
   autoResizeTextarea() {
@@ -202,6 +218,9 @@ class App {
     // Permission request handler
     this.ws.on('permission_request', (data) => this.onPermissionRequest(data));
 
+    // Mode changed handler
+    this.ws.on('mode_changed', (data) => this.onModeChanged(data));
+
     try {
       await this.ws.connect();
     } catch (err) {
@@ -239,7 +258,10 @@ class App {
     this.currentWorkingDirectory = session.workingDirectory;
     this.chatUI.clearMessages();
     this.ws.listSessions();
-    
+
+    // Sync mode with new session
+    this.syncModeWithServer();
+
     // If terminal is open, create terminal for new session
     if (this.elements.terminalPanel.classList.contains('show')) {
       this.ensureTerminalForCurrentSession();
@@ -258,8 +280,15 @@ class App {
       this.chatUI.clearMessages();
     }
 
+    // Sync mode: if session has a mode, use it; otherwise sync our mode to server
+    if (data.session.mode) {
+      this.setModeUI(data.session.mode);
+    } else {
+      this.syncModeWithServer();
+    }
+
     this.ws.listSessions();
-    
+
     // If terminal is open, switch to terminal for this session
     if (this.elements.terminalPanel.classList.contains('show')) {
       this.ensureTerminalForCurrentSession();
@@ -698,13 +727,77 @@ class App {
     this.elements.appContainer.classList.remove('terminal-open');
   }
 
+  // Mode management methods
+  cycleMode() {
+    const currentIndex = this.modes.indexOf(this.currentMode);
+    const nextIndex = (currentIndex + 1) % this.modes.length;
+    const nextMode = this.modes[nextIndex];
+    this.setMode(nextMode);
+  }
+
+  setMode(mode) {
+    if (!this.modeConfig[mode]) return;
+
+    this.currentMode = mode;
+    this.setModeUI(mode);
+
+    // Persist to sessionStorage
+    sessionStorage.setItem('claudeMode', mode);
+
+    // Send to server if connected
+    if (this.ws && this.ws.isConnected() && this.currentSessionId) {
+      this.ws.send('set_mode', { mode });
+    }
+  }
+
+  setModeUI(mode) {
+    if (!this.modeConfig[mode]) return;
+
+    this.currentMode = mode;
+    const config = this.modeConfig[mode];
+    const btn = this.elements.modeToggleBtn;
+
+    if (btn) {
+      // Update button content
+      btn.querySelector('.mode-icon').innerHTML = config.icon;
+      btn.querySelector('.mode-label').textContent = config.label;
+      btn.title = `Current Mode: ${config.label}`;
+
+      // Update button class
+      btn.className = 'mode-btn';
+      if (config.class) {
+        btn.classList.add(config.class);
+      }
+    }
+
+    // Update sessionStorage
+    sessionStorage.setItem('claudeMode', mode);
+  }
+
+  syncModeWithServer() {
+    // Restore mode from sessionStorage or default
+    const savedMode = sessionStorage.getItem('claudeMode');
+    if (savedMode && this.modeConfig[savedMode]) {
+      this.setMode(savedMode);
+    } else {
+      this.setMode('default');
+    }
+  }
+
+  onModeChanged(data) {
+    // Server confirmed mode change
+    if (data.mode && this.modeConfig[data.mode]) {
+      this.setModeUI(data.mode);
+    }
+  }
+
   async logout() {
     try {
       const response = await fetch('/api/logout', {
         method: 'POST',
         credentials: 'include'
       });
-      
+
       if (response.ok) {
         // Clear local storage
         localStorage.removeItem('sessionId');

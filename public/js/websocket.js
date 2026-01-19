@@ -173,6 +173,10 @@ class WebSocketClient {
         });
         break;
 
+      case 'mode_changed':
+        this.emit('mode_changed', { mode: msg.mode });
+        break;
+
       default:
         console.log('Unknown message type:', msg.type, msg);
     }

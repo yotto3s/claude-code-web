@@ -65,7 +65,8 @@ class SessionManager {
       history: [],
       createdAt: now,
       lastActivity: now,
-      workingDirectory
+      workingDirectory,
+      mode: 'default'
     };
 
     this.sessions.set(id, session);
