@@ -155,6 +155,23 @@ class WebSocketClient {
         this.emit('terminal_closed', { terminalId: msg.terminalId, success: msg.success });
         break;
 
+      case 'prompt':
+        this.emit('prompt', {
+          toolUseId: msg.toolUseId,
+          toolName: msg.toolName,
+          input: msg.input
+        });
+        break;
+
+      case 'permission_request':
+        this.emit('permission_request', {
+          requestId: msg.requestId,
+          toolName: msg.toolName,
+          toolInput: msg.toolInput,
+          toolUseId: msg.toolUseId
+        });
+        break;
+
       default:
         console.log('Unknown message type:', msg.type, msg);
     }
@@ -196,6 +213,14 @@ class WebSocketClient {
 
   cancel() {
     return this.send('cancel');
+  }
+
+  sendPromptResponse(toolUseId, response) {
+    return this.send('prompt_response', { toolUseId, response });
+  }
+
+  sendPermissionResponse(requestId, decision, toolInput) {
+    return this.send('permission_response', { requestId, decision, toolInput });
   }
 
   on(event, handler) {

@@ -6,6 +6,7 @@ class ChatUI {
     this.messages = [];
     this.currentAssistantMessage = null;
     this.currentToolIndicator = null;
+    this.currentPrompt = null;
   }
 
   clearMessages() {
@@ -217,6 +218,229 @@ class ChatUI {
       }
     }
 
+    this.scrollToBottom();
+  }
+
+  showPrompt(data, onResponse) {
+    this.removePrompt();
+
+    const promptContainer = document.createElement('div');
+    promptContainer.className = 'prompt-container';
+
+    const toolUseId = data.toolUseId;
+    const questions = data.input?.questions || [];
+    const responses = {};
+
+    questions.forEach((q, idx) => {
+      const questionDiv = document.createElement('div');
+      questionDiv.className = 'prompt-question';
+
+      // Header chip
+      if (q.header) {
+        const header = document.createElement('span');
+        header.className = 'prompt-header';
+        header.textContent = q.header;
+        questionDiv.appendChild(header);
+      }
+
+      // Question text
+      const questionText = document.createElement('div');
+      questionText.className = 'prompt-text';
+      questionText.textContent = q.question;
+      questionDiv.appendChild(questionText);
+
+      // Options container
+      const optionsDiv = document.createElement('div');
+      optionsDiv.className = 'prompt-options';
+
+      const isMultiSelect = q.multiSelect === true;
+      const selectedOptions = new Set();
+
+      q.options.forEach((opt) => {
+        const optionBtn = document.createElement('button');
+        optionBtn.className = 'prompt-option';
+        optionBtn.innerHTML = `
+          <span class="prompt-option-label">${escapeHtml(opt.label)}</span>
+          ${opt.description ? `<span class="prompt-option-desc">${escapeHtml(opt.description)}</span>` : ''}
+        `;
+
+        optionBtn.addEventListener('click', () => {
+          if (isMultiSelect) {
+            // Toggle selection
+            if (selectedOptions.has(opt.label)) {
+              selectedOptions.delete(opt.label);
+              optionBtn.classList.remove('selected');
+            } else {
+              selectedOptions.add(opt.label);
+              optionBtn.classList.add('selected');
+            }
+            responses[idx] = Array.from(selectedOptions);
+          } else {
+            // Single select - submit immediately
+            responses[idx] = opt.label;
+            this.removePrompt();
+            onResponse(toolUseId, { answers: responses });
+          }
+        });
+
+        optionsDiv.appendChild(optionBtn);
+      });
+
+      questionDiv.appendChild(optionsDiv);
+
+      // Custom input ("Other" option)
+      const customDiv = document.createElement('div');
+      customDiv.className = 'prompt-custom';
+      const customInput = document.createElement('input');
+      customInput.type = 'text';
+      customInput.placeholder = 'Or type a custom response...';
+      const customSubmit = document.createElement('button');
+      customSubmit.className = 'btn btn-secondary prompt-custom-btn';
+      customSubmit.textContent = 'Submit';
+
+      customSubmit.addEventListener('click', () => {
+        const value = customInput.value.trim();
+        if (value) {
+          responses[idx] = value;
+          this.removePrompt();
+          onResponse(toolUseId, { answers: responses });
+        }
+      });
+
+      customInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          customSubmit.click();
+        }
+      });
+
+      customDiv.appendChild(customInput);
+      customDiv.appendChild(customSubmit);
+      questionDiv.appendChild(customDiv);
+
+      promptContainer.appendChild(questionDiv);
+
+      // Submit button for multiSelect
+      if (isMultiSelect) {
+        const submitBtn = document.createElement('button');
+        submitBtn.className = 'btn btn-primary prompt-submit-btn';
+        submitBtn.textContent = 'Submit Selection';
+        submitBtn.addEventListener('click', () => {
+          if (selectedOptions.size > 0) {
+            responses[idx] = Array.from(selectedOptions);
+          }
+          this.removePrompt();
+          onResponse(toolUseId, { answers: responses });
+        });
+        promptContainer.appendChild(submitBtn);
+      }
+    });
+
+    // Cancel button
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary prompt-cancel';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', () => {
+      this.removePrompt();
+      // Send empty response to indicate cancellation
+      onResponse(toolUseId, { answers: {}, cancelled: true });
+    });
+    promptContainer.appendChild(cancelBtn);
+
+    this.container.appendChild(promptContainer);
+    this.currentPrompt = promptContainer;
+    this.scrollToBottom();
+  }
+
+  removePrompt() {
+    if (this.currentPrompt) {
+      this.currentPrompt.remove();
+      this.currentPrompt = null;
+    }
+  }
+
+  showPermissionPrompt(data, onResponse) {
+    this.removePrompt();
+
+    const promptContainer = document.createElement('div');
+    promptContainer.className = 'prompt-container permission-prompt';
+
+    const requestId = data.requestId;
+    const toolName = data.toolName || 'Unknown Tool';
+    const toolInput = data.toolInput || {};
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'permission-header';
+    header.innerHTML = `
+      <span class="permission-icon">🔐</span>
+      <span class="permission-title">Permission Required</span>
+    `;
+    promptContainer.appendChild(header);
+
+    // Tool info
+    const toolInfo = document.createElement('div');
+    toolInfo.className = 'permission-tool-info';
+    toolInfo.innerHTML = `
+      <div class="permission-tool-name">Tool: <strong>${escapeHtml(toolName)}</strong></div>
+    `;
+
+    // Show tool input details
+    if (Object.keys(toolInput).length > 0) {
+      const inputDetails = document.createElement('div');
+      inputDetails.className = 'permission-tool-input';
+
+      // Format the input nicely
+      if (toolInput.command) {
+        inputDetails.innerHTML = `<code>${escapeHtml(toolInput.command)}</code>`;
+      } else if (toolInput.file_path) {
+        inputDetails.innerHTML = `<code>${escapeHtml(toolInput.file_path)}</code>`;
+      } else {
+        inputDetails.innerHTML = `<pre>${escapeHtml(JSON.stringify(toolInput, null, 2))}</pre>`;
+      }
+      toolInfo.appendChild(inputDetails);
+    }
+    promptContainer.appendChild(toolInfo);
+
+    // Buttons container
+    const buttonsDiv = document.createElement('div');
+    buttonsDiv.className = 'permission-buttons';
+
+    // Allow button
+    const allowBtn = document.createElement('button');
+    allowBtn.className = 'btn btn-primary permission-btn';
+    allowBtn.textContent = 'Allow';
+    allowBtn.addEventListener('click', () => {
+      this.removePrompt();
+      onResponse(requestId, 'allow', toolInput);
+    });
+
+    // Allow All button
+    const allowAllBtn = document.createElement('button');
+    allowAllBtn.className = 'btn btn-secondary permission-btn';
+    allowAllBtn.textContent = 'Allow All';
+    allowAllBtn.title = 'Allow this tool for the rest of the session';
+    allowAllBtn.addEventListener('click', () => {
+      this.removePrompt();
+      onResponse(requestId, 'allow_all', toolInput);
+    });
+
+    // Deny button
+    const denyBtn = document.createElement('button');
+    denyBtn.className = 'btn btn-danger permission-btn';
+    denyBtn.textContent = 'Deny';
+    denyBtn.addEventListener('click', () => {
+      this.removePrompt();
+      onResponse(requestId, 'deny', toolInput);
+    });
+
+    buttonsDiv.appendChild(allowBtn);
+    buttonsDiv.appendChild(allowAllBtn);
+    buttonsDiv.appendChild(denyBtn);
+    promptContainer.appendChild(buttonsDiv);
+
+    this.container.appendChild(promptContainer);
+    this.currentPrompt = promptContainer;
     this.scrollToBottom();
   }
 

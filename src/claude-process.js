@@ -11,6 +11,7 @@ class ClaudeProcess extends EventEmitter {
     this.isProcessing = false;
     this.currentMessageId = null;
     this.sessionId = null;
+    this.activeToolBlocks = new Map(); // index -> { name, id, inputBuffer }
   }
 
   start() {
@@ -42,6 +43,8 @@ class ClaudeProcess extends EventEmitter {
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
       '--verbose',
+      '--permission-mode', 'default',
+      '--permission-prompt-tool', 'stdio',
       '--add-dir', this.workingDirectory
     ];
 
@@ -112,17 +115,49 @@ class ClaudeProcess extends EventEmitter {
         this.currentMessageId = msg.message?.id;
         this.emit('message_start', msg.message);
 
-        // Extract and emit text content
+        // Extract and emit text content and detect tool_use
         if (msg.message?.content) {
           for (const block of msg.message.content) {
             if (block.type === 'text') {
               this.emit('chunk', { index: 0, text: block.text });
+            } else if (block.type === 'tool_use' && block.name === 'AskUserQuestion') {
+              // Emit prompt event for AskUserQuestion tool
+              this.emit('prompt', {
+                toolUseId: block.id,
+                toolName: block.name,
+                input: block.input
+              });
             }
           }
         }
         break;
 
+      case 'tool_use':
+        // Handle tool_use as top-level message (stream-json format)
+        if (msg.name === 'AskUserQuestion') {
+          this.emit('prompt', {
+            toolUseId: msg.id,
+            toolName: msg.name,
+            input: msg.input
+          });
+        }
+        // Emit generic tool_use event for other tools
+        this.emit('tool_use', {
+          id: msg.id,
+          name: msg.name,
+          input: msg.input
+        });
+        break;
+
       case 'content_block_start':
+        // Track tool_use blocks for accumulating streamed input
+        if (msg.content_block?.type === 'tool_use') {
+          this.activeToolBlocks.set(msg.index, {
+            name: msg.content_block.name,
+            id: msg.content_block.id,
+            inputBuffer: ''
+          });
+        }
         this.emit('content_start', {
           index: msg.index,
           contentBlock: msg.content_block
@@ -137,6 +172,11 @@ class ClaudeProcess extends EventEmitter {
             text: msg.delta.text
           });
         } else if (msg.delta?.type === 'input_json_delta') {
+          // Accumulate JSON input for tool blocks
+          const toolBlock = this.activeToolBlocks.get(msg.index);
+          if (toolBlock) {
+            toolBlock.inputBuffer += msg.delta.partial_json;
+          }
           this.emit('tool_input_delta', {
             index: msg.index,
             json: msg.delta.partial_json
@@ -145,6 +185,22 @@ class ClaudeProcess extends EventEmitter {
         break;
 
       case 'content_block_stop':
+        // Check if this is an AskUserQuestion tool completion
+        const completedTool = this.activeToolBlocks.get(msg.index);
+        if (completedTool && completedTool.name === 'AskUserQuestion') {
+          try {
+            const input = JSON.parse(completedTool.inputBuffer);
+            this.emit('prompt', {
+              toolUseId: completedTool.id,
+              toolName: completedTool.name,
+              input
+            });
+          } catch (err) {
+            console.error('Failed to parse AskUserQuestion input:', err);
+          }
+        }
+        // Clean up tool block
+        this.activeToolBlocks.delete(msg.index);
         this.emit('content_stop', { index: msg.index });
         break;
 
@@ -178,6 +234,11 @@ class ClaudeProcess extends EventEmitter {
           message: msg.error?.message || 'Unknown error',
           code: msg.error?.code
         });
+        break;
+
+      case 'control_request':
+        // Permission prompt from Claude CLI
+        this.emit('permission_request', msg);
         break;
 
       default:
@@ -214,6 +275,58 @@ class ClaudeProcess extends EventEmitter {
       this.isProcessing = false;
       this.emit('cancelled');
     }
+  }
+
+  sendToolResponse(toolUseId, response) {
+    if (!this.process || !this.process.stdin.writable) {
+      this.emit('error', { message: 'Process not running' });
+      return false;
+    }
+
+    // Send tool_result message to Claude CLI stdin
+    const msg = JSON.stringify({
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: JSON.stringify(response)
+    });
+
+    this.process.stdin.write(msg + '\n');
+    return true;
+  }
+
+  sendControlResponse(requestId, decision, toolInput = null) {
+    if (!this.process || !this.process.stdin.writable) {
+      this.emit('error', { message: 'Process not running' });
+      return false;
+    }
+
+    // Build the inner response based on decision
+    let innerResponse;
+    if (decision === 'allow' || decision === 'allow_all') {
+      innerResponse = { behavior: 'allow' };
+      // Only include updatedInput if we have actual modifications
+      if (toolInput && Object.keys(toolInput).length > 0) {
+        innerResponse.updatedInput = toolInput;
+      }
+    } else {
+      innerResponse = {
+        behavior: 'deny',
+        message: 'User denied permission'
+      };
+    }
+
+    // Wrap in control_response format
+    const msg = JSON.stringify({
+      type: 'control_response',
+      request_id: requestId,
+      response: {
+        subtype: 'success',
+        response: innerResponse
+      }
+    });
+
+    this.process.stdin.write(msg + '\n');
+    return true;
   }
 
   terminate() {

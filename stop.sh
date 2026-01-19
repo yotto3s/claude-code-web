@@ -2,41 +2,40 @@
 
 # Stop Claude Code Web Services
 
-set -e
-
 echo "Stopping Claude Code Web..."
 
 GATEWAY_CONTAINER="claude-code-gateway"
+HOST_PORT=${HOST_PORT:-3001}
 
 # Stop gateway container
 echo "Stopping gateway container..."
 docker stop ${GATEWAY_CONTAINER} 2>/dev/null && echo "  Gateway stopped" || echo "  Gateway not running"
 docker rm ${GATEWAY_CONTAINER} 2>/dev/null || true
 
-# Stop host server
-if [ -f ./data/server.pid ]; then
-  SERVER_PID=$(cat ./data/server.pid)
-  echo "Stopping host server (PID: ${SERVER_PID})..."
-  
-  if kill -0 ${SERVER_PID} 2>/dev/null; then
-    kill ${SERVER_PID}
-    echo "  Server stopped"
-  else
-    echo "  Server not running"
-  fi
-  
-  rm ./data/server.pid
+# Stop host server - try multiple methods
+echo "Stopping host server..."
+
+STOPPED=false
+
+# Method 1: Kill by port
+PID=$(lsof -ti:${HOST_PORT} 2>/dev/null || true)
+if [ -n "$PID" ]; then
+  echo "  Found server on port ${HOST_PORT} (PID: $PID)"
+  kill $PID 2>/dev/null && STOPPED=true
+fi
+
+# Method 2: Kill by process name (backup)
+if ! $STOPPED; then
+  pkill -f "node server.js" 2>/dev/null && STOPPED=true
+fi
+
+# Clean up PID file
+rm -f ./data/server.pid
+
+if $STOPPED; then
+  echo "  Server stopped"
 else
-  echo "Host server PID file not found"
-  echo "Checking for server process on port 3001..."
-  PID=$(lsof -ti:3001 2>/dev/null || true)
-  if [ ! -z "$PID" ]; then
-    echo "  Found process $PID, stopping..."
-    kill $PID
-    echo "  Server stopped"
-  else
-    echo "  No server process found"
-  fi
+  echo "  Server not running"
 fi
 
 echo ""

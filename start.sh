@@ -125,13 +125,13 @@ fi
 echo ""
 cat << EOF
 ╔══════════════════════════════════════════════════════╗
-║  Claude Code Web                                    ║
+║  Claude Code Web                                     ║
 ║                                                      ║
-║  Gateway:     http://0.0.0.0:${GATEWAY_PORT}                        ║
-║  Host Server: http://localhost:${HOST_PORT}                        ║
+║  Gateway:     http://0.0.0.0:${GATEWAY_PORT}         ║
+║  Host Server: http://localhost:${HOST_PORT}          ║
 ║                                                      ║
-║  Auth: PAM (System Users)                           ║
-║  Mode: Gateway in Docker, Sessions on Host          ║
+║  Auth: PAM (System Users)                            ║
+║  Mode: Gateway in Docker, Sessions on Host           ║
 ╚══════════════════════════════════════════════════════╝
 
 Access the web interface at: http://localhost:${GATEWAY_PORT}

@@ -196,6 +196,12 @@ class App {
     this.ws.on('terminal_exit', (data) => this.onTerminalExit(data));
     this.ws.on('terminal_closed', (data) => this.onTerminalClosed(data));
 
+    // Prompt event handler
+    this.ws.on('prompt', (data) => this.onPrompt(data));
+
+    // Permission request handler
+    this.ws.on('permission_request', (data) => this.onPermissionRequest(data));
+
     try {
       await this.ws.connect();
     } catch (err) {
@@ -306,6 +312,7 @@ class App {
 
   onComplete() {
     this.chatUI.finishAssistantMessage();
+    this.chatUI.removePrompt();
     this.isProcessing = false;
     this.updateSendButton();
   }
@@ -319,6 +326,7 @@ class App {
 
   onCancelled() {
     this.chatUI.finishAssistantMessage();
+    this.chatUI.removePrompt();
     this.chatUI.showSystemMessage('Response cancelled');
     this.isProcessing = false;
     this.updateSendButton();
@@ -340,6 +348,28 @@ class App {
       this.chatUI.showSystemMessage(`Claude process exited with code ${data.code}`);
     }
     // Process automatically restarts on server side, no action needed
+  }
+
+  onPrompt(data) {
+    // Remove tool indicator since we're showing a prompt
+    this.chatUI.removeToolIndicator();
+    this.currentTool = null;
+
+    // Show the prompt UI
+    this.chatUI.showPrompt(data, (toolUseId, response) => {
+      this.ws.sendPromptResponse(toolUseId, response);
+    });
+  }
+
+  onPermissionRequest(data) {
+    // Remove tool indicator since we're showing a permission prompt
+    this.chatUI.removeToolIndicator();
+    this.currentTool = null;
+
+    // Show the permission prompt UI
+    this.chatUI.showPermissionPrompt(data, (requestId, decision, toolInput) => {
+      this.ws.sendPermissionResponse(requestId, decision, toolInput);
+    });
   }
 
   sendMessage() {

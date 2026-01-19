@@ -97,6 +97,14 @@ async function handleMessage(ws, msg, ctx) {
       handleCancel(ws, getCurrentSession);
       break;
 
+    case 'prompt_response':
+      handlePromptResponse(ws, msg, getCurrentSession);
+      break;
+
+    case 'permission_response':
+      handlePermissionResponse(ws, msg, getCurrentSession);
+      break;
+
     case 'list_sessions':
       handleListSessions(ws);
       break;
@@ -307,6 +315,25 @@ function setupSessionListeners(ws, session) {
       text
     }));
   });
+
+  proc.on('prompt', (data) => {
+    ws.send(JSON.stringify({
+      type: 'prompt',
+      toolUseId: data.toolUseId,
+      toolName: data.toolName,
+      input: data.input
+    }));
+  });
+
+  proc.on('permission_request', (data) => {
+    ws.send(JSON.stringify({
+      type: 'permission_request',
+      requestId: data.request_id,
+      toolName: data.request?.tool_name,
+      toolInput: data.request?.input,
+      toolUseId: data.request?.tool_use_id
+    }));
+  });
 }
 
 function handleUserMessage(ws, msg, getCurrentSession) {
@@ -349,6 +376,50 @@ function handleCancel(ws, getCurrentSession) {
   }
 
   session.process.cancel();
+}
+
+function handlePromptResponse(ws, msg, getCurrentSession) {
+  const session = getCurrentSession();
+
+  if (!session) {
+    sendError(ws, 'No active session');
+    return;
+  }
+
+  if (!msg.toolUseId || !msg.response) {
+    sendError(ws, 'Tool use ID and response are required');
+    return;
+  }
+
+  const success = session.process.sendToolResponse(msg.toolUseId, msg.response);
+
+  if (!success) {
+    sendError(ws, 'Failed to send prompt response');
+  }
+}
+
+function handlePermissionResponse(ws, msg, getCurrentSession) {
+  const session = getCurrentSession();
+
+  if (!session) {
+    sendError(ws, 'No active session');
+    return;
+  }
+
+  if (!msg.requestId || !msg.decision) {
+    sendError(ws, 'Request ID and decision are required');
+    return;
+  }
+
+  const success = session.process.sendControlResponse(
+    msg.requestId,
+    msg.decision,
+    msg.toolInput || {}  // Pass the tool input for "updatedInput"
+  );
+
+  if (!success) {
+    sendError(ws, 'Failed to send permission response');
+  }
 }
 
 function handleListSessions(ws) {
