@@ -123,16 +123,16 @@ fi
 
 # Display startup information
 echo ""
+echo "╔════════════════════════════════════════════════════════╗"
+echo "║  Claude Code Web                                       ║"
+echo "║                                                        ║"
+printf "║  Gateway:     http://0.0.0.0:%-25s ║\n" "${GATEWAY_PORT}"
+printf "║  Host Server: http://localhost:%-22s ║\n" "${HOST_PORT}"
+echo "║                                                        ║"
+echo "║  Auth: PAM (System Users)                              ║"
+echo "║  Mode: Gateway in Docker, Sessions on Host             ║"
+echo "╚════════════════════════════════════════════════════════╝"
 cat << EOF
-╔══════════════════════════════════════════════════════╗
-║  Claude Code Web                                     ║
-║                                                      ║
-║  Gateway:     http://0.0.0.0:${GATEWAY_PORT}         ║
-║  Host Server: http://localhost:${HOST_PORT}          ║
-║                                                      ║
-║  Auth: PAM (System Users)                            ║
-║  Mode: Gateway in Docker, Sessions on Host           ║
-╚══════════════════════════════════════════════════════╝
 
 Access the web interface at: http://localhost:${GATEWAY_PORT}
 Login with your system credentials
