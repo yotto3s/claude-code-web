@@ -117,6 +117,14 @@ function setupWebSocket(server) {
 
     ws.on('close', () => {
       console.log(`WebSocket disconnected from ${clientIP}`);
+
+      // Mark session as having no connected client (but keep process running)
+      if (currentSession) {
+        sessionManager.setClientConnected(currentSession.id, false);
+        console.log(
+          `[WebSocket] Session ${currentSession.id} marked as disconnected - process will continue running`
+        );
+      }
     });
 
     ws.on('error', (err) => {
@@ -124,6 +132,10 @@ function setupWebSocket(server) {
     });
 
     function setSession(session) {
+      // If switching sessions, mark the old one as disconnected
+      if (currentSession && currentSession.id !== session?.id) {
+        sessionManager.setClientConnected(currentSession.id, false);
+      }
       currentSession = session;
     }
 
@@ -248,6 +260,9 @@ function handleCreateSession(ws, msg, setSession) {
     const session = sessionManager.createSession(workingDirectory, sessionName);
     setSession(session);
 
+    // Mark session as having a connected client
+    sessionManager.setClientConnected(session.id, true);
+
     setupSessionListeners(ws, session);
 
     safeSend(ws, {
@@ -283,10 +298,18 @@ function handleJoinSession(ws, msg, setSession) {
   }
 
   setSession(session);
+
+  // Mark session as having a connected client
+  sessionManager.setClientConnected(session.id, true);
+
   setupSessionListeners(ws, session);
 
   // Get terminals for this session
   const terminals = terminalManager.getTerminalListForSession(session.id);
+
+  // Get any pending messages that were generated while user was disconnected
+  const pendingMessages = sessionManager.getPendingMessages(session.id);
+  const hasPendingMessages = pendingMessages.length > 0;
 
   // Send session info and history
   safeSend(ws, {
@@ -299,10 +322,35 @@ function handleJoinSession(ws, msg, setSession) {
       mode: session.mode || 'plan',
       webSearchEnabled: session.webSearchEnabled || false,
       recovered: session.persisted || false, // Let client know this was recovered
+      hasPendingMessages: hasPendingMessages, // Let client know pending messages are coming
     },
     history: session.history,
     terminals: terminals, // Include terminals list
   });
+
+  // Send pending messages that were generated while user was disconnected
+  if (hasPendingMessages) {
+    console.log(
+      `[WebSocket] Sending ${pendingMessages.length} pending message(s) for session ${session.id}`
+    );
+
+    const messageIds = [];
+    for (const pendingMsg of pendingMessages) {
+      messageIds.push(pendingMsg.id);
+
+      // Send the message with its original type
+      safeSend(ws, {
+        type: pendingMsg.messageType,
+        ...pendingMsg.data,
+        _pending: true, // Flag to indicate this was a pending message
+        _timestamp: pendingMsg.timestamp,
+      });
+    }
+
+    // Mark messages as delivered and clean up
+    sessionManager.markMessagesDelivered(session.id, messageIds);
+    console.log(`[WebSocket] Marked ${messageIds.length} pending message(s) as delivered`);
+  }
 }
 
 function handleRenameSession(ws, msg, getCurrentSession) {
@@ -399,13 +447,33 @@ function handleDeleteSession(ws, msg, getCurrentSession, setSession) {
   }
 }
 
+/**
+ * Remove only non-persistent listeners from an EventEmitter.
+ * Persistent listeners (those with _persistent = true) are kept.
+ *
+ * @param {EventEmitter} emitter - The event emitter
+ */
+function removeNonPersistentListeners(emitter) {
+  const eventNames = emitter.eventNames();
+  for (const eventName of eventNames) {
+    const listeners = emitter.rawListeners(eventName);
+    for (const listener of listeners) {
+      // Only remove if not marked as persistent
+      if (!listener._persistent) {
+        emitter.removeListener(eventName, listener);
+      }
+    }
+  }
+}
+
 function setupSessionListeners(ws, session) {
   const proc = session.process;
 
-  // Remove any existing listeners to prevent duplicates
-  proc.removeAllListeners();
+  // Remove any existing NON-persistent listeners to prevent duplicates
+  // Persistent listeners (for message capture/persistence) are kept
+  removeNonPersistentListeners(proc);
 
-  // Re-attach the sdk_session_id listener (was removed by removeAllListeners above)
+  // Re-attach the sdk_session_id listener (was removed by removeNonPersistentListeners above)
   // This is critical for persisting the SDK session ID for future context resume
   proc.once('sdk_session_id', (sdkSessionId) => {
     if (sdkSessionId && sdkSessionId !== session.sdkSessionId) {
@@ -422,15 +490,11 @@ function setupSessionListeners(ws, session) {
     }
   });
 
-  // Buffer to accumulate assistant message text for history persistence
-  let currentMessageBuffer = '';
+  // WebSocket listeners - these forward events to the connected client
+  // Note: Message accumulation and history persistence is handled by persistent listeners
+  // in session-manager.js, so we don't duplicate that logic here
 
   proc.on('chunk', (data) => {
-    // Accumulate text for history persistence
-    if (data.text) {
-      currentMessageBuffer += data.text;
-    }
-
     safeSend(ws, {
       type: 'chunk',
       text: data.text,
@@ -484,17 +548,7 @@ function setupSessionListeners(ws, session) {
   });
 
   proc.on('result', (data) => {
-    // Add accumulated message to history
-    if (currentMessageBuffer) {
-      sessionManager.addToHistory(session.id, {
-        role: 'assistant',
-        content: currentMessageBuffer,
-      });
-    }
-
-    // Reset buffer for next message
-    currentMessageBuffer = '';
-
+    // Note: History persistence is handled by persistent listeners in session-manager.js
     safeSend(ws, {
       type: 'result',
       data,
@@ -502,9 +556,6 @@ function setupSessionListeners(ws, session) {
   });
 
   proc.on('error', (data) => {
-    // Reset buffer on error
-    currentMessageBuffer = '';
-
     safeSend(ws, {
       type: 'error',
       message: data.message,
@@ -513,9 +564,6 @@ function setupSessionListeners(ws, session) {
   });
 
   proc.on('cancelled', () => {
-    // Reset buffer on cancellation
-    currentMessageBuffer = '';
-
     safeSend(ws, {
       type: 'cancelled',
     });
@@ -546,6 +594,10 @@ function setupSessionListeners(ws, session) {
     if (isWsOpen(ws)) {
       // Restart the Claude process for the same session so user can continue
       session.process.start();
+
+      // Re-setup persistent listeners for the restarted process
+      sessionManager.setupPersistentListeners(session);
+
       setupSessionListeners(ws, session);
 
       // Restore the mode from session to the restarted process

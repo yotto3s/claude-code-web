@@ -92,6 +92,19 @@ class SessionDatabase {
       );
 
       CREATE INDEX IF NOT EXISTS idx_allowed_tools_session_id ON allowed_tools(session_id);
+
+      CREATE TABLE IF NOT EXISTS pending_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        message_type TEXT NOT NULL,
+        data TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        delivered INTEGER DEFAULT 0,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_pending_messages_session_id ON pending_messages(session_id);
+      CREATE INDEX IF NOT EXISTS idx_pending_messages_delivered ON pending_messages(delivered);
     `);
   }
 
@@ -255,6 +268,84 @@ class SessionDatabase {
 
   clearAllowedTools(sessionId) {
     const stmt = this.db.prepare('DELETE FROM allowed_tools WHERE session_id = ?');
+    stmt.run(sessionId);
+  }
+
+  // Pending Messages CRUD operations (for offline message delivery)
+  /**
+   * Add a pending message that was generated while user was disconnected.
+   *
+   * @param {string} sessionId - Session ID
+   * @param {string} messageType - Type of message (chunk, result, error, etc.)
+   * @param {object} data - Message data to serialize
+   * @returns {number} The ID of the inserted message
+   */
+  addPendingMessage(sessionId, messageType, data) {
+    const stmt = this.db.prepare(`
+      INSERT INTO pending_messages (session_id, message_type, data, timestamp, delivered)
+      VALUES (?, ?, ?, ?, 0)
+    `);
+    const result = stmt.run(sessionId, messageType, JSON.stringify(data), Date.now());
+    return result.lastInsertRowid;
+  }
+
+  /**
+   * Get all undelivered pending messages for a session.
+   *
+   * @param {string} sessionId - Session ID
+   * @returns {Array} Array of pending messages with id, message_type, data, timestamp
+   */
+  getPendingMessages(sessionId) {
+    const stmt = this.db.prepare(`
+      SELECT id, message_type, data, timestamp
+      FROM pending_messages
+      WHERE session_id = ? AND delivered = 0
+      ORDER BY timestamp ASC, id ASC
+    `);
+    const rows = stmt.all(sessionId);
+    return rows.map((row) => ({
+      id: row.id,
+      messageType: row.message_type,
+      data: JSON.parse(row.data),
+      timestamp: row.timestamp,
+    }));
+  }
+
+  /**
+   * Mark pending messages as delivered.
+   *
+   * @param {string} sessionId - Session ID
+   * @param {number[]} messageIds - Array of message IDs to mark as delivered
+   */
+  markMessagesDelivered(sessionId, messageIds) {
+    if (!messageIds || messageIds.length === 0) return;
+
+    const placeholders = messageIds.map(() => '?').join(',');
+    const stmt = this.db.prepare(`
+      UPDATE pending_messages
+      SET delivered = 1
+      WHERE session_id = ? AND id IN (${placeholders})
+    `);
+    stmt.run(sessionId, ...messageIds);
+  }
+
+  /**
+   * Clear all pending messages for a session (after successful delivery).
+   *
+   * @param {string} sessionId - Session ID
+   */
+  clearPendingMessages(sessionId) {
+    const stmt = this.db.prepare('DELETE FROM pending_messages WHERE session_id = ? AND delivered = 1');
+    stmt.run(sessionId);
+  }
+
+  /**
+   * Delete all pending messages for a session (on session deletion).
+   *
+   * @param {string} sessionId - Session ID
+   */
+  deleteAllPendingMessages(sessionId) {
+    const stmt = this.db.prepare('DELETE FROM pending_messages WHERE session_id = ?');
     stmt.run(sessionId);
   }
 

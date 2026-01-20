@@ -8,6 +8,8 @@
  * - Automatic cleanup of expired sessions
  * - Mode management (default, acceptEdits, plan)
  * - Allowed tools tracking (for "Allow All" permission persistence)
+ * - Persistent listeners for capturing messages when user disconnects
+ * - Pending message queue for offline delivery
  *
  * @module session-manager
  */
@@ -140,6 +142,8 @@ class SessionManager {
       allowedTools: new Set(), // Tools approved via "Allow All"
       sdkSessionId: null, // Will be set when SDK initializes
       webSearchEnabled: false, // Web search toggle (default off)
+      hasConnectedClient: false, // Track if a WebSocket client is connected
+      currentMessageBuffer: '', // Buffer for accumulating assistant text
     };
 
     // Listen for SDK session ID so we can persist it for future resume
@@ -156,6 +160,9 @@ class SessionManager {
     process.start();
 
     this.sessions.set(id, session);
+
+    // Set up persistent listeners for capturing messages even when user disconnects
+    this.setupPersistentListeners(session);
 
     // Persist to database
     try {
@@ -220,6 +227,17 @@ class SessionManager {
 
       session.process = process;
       session.lastActivity = Date.now();
+
+      // Initialize connection tracking fields if not present
+      if (session.hasConnectedClient === undefined) {
+        session.hasConnectedClient = false;
+      }
+      if (session.currentMessageBuffer === undefined) {
+        session.currentMessageBuffer = '';
+      }
+
+      // Set up persistent listeners for the recovered process
+      this.setupPersistentListeners(session);
 
       // Update last activity in database
       try {
@@ -545,6 +563,231 @@ class SessionManager {
         console.log(`[SessionManager] Sent initial prompt to read markdown files for session ${session.id}`);
       }
     }, 100);
+  }
+
+  /**
+   * Set up persistent listeners on the Claude process.
+   * These listeners capture messages and persist them even when no WebSocket client is connected.
+   * They also queue messages for delivery when a client reconnects.
+   *
+   * @param {object} session - The session object
+   */
+  setupPersistentListeners(session) {
+    const proc = session.process;
+    if (!proc) return;
+
+    // Mark listeners as persistent so WebSocket handler knows not to remove them
+    const createPersistentListener = (handler) => {
+      handler._persistent = true;
+      return handler;
+    };
+
+    // Persistent chunk handler - accumulates text and queues for offline delivery
+    proc.on(
+      'chunk',
+      createPersistentListener((data) => {
+        // Accumulate text for history persistence
+        if (data.text) {
+          session.currentMessageBuffer += data.text;
+        }
+
+        // If no client connected, queue the message for later delivery
+        if (!session.hasConnectedClient) {
+          this.queuePendingMessage(session.id, 'chunk', data);
+        }
+      })
+    );
+
+    // Persistent result handler - saves accumulated message to history
+    proc.on(
+      'result',
+      createPersistentListener((data) => {
+        // Save accumulated message to history
+        if (session.currentMessageBuffer) {
+          this.addToHistory(session.id, {
+            role: 'assistant',
+            content: session.currentMessageBuffer,
+          });
+          session.currentMessageBuffer = '';
+        }
+
+        // Queue for offline delivery
+        if (!session.hasConnectedClient) {
+          this.queuePendingMessage(session.id, 'result', data);
+        }
+      })
+    );
+
+    // Persistent complete handler
+    proc.on(
+      'complete',
+      createPersistentListener((data) => {
+        if (!session.hasConnectedClient) {
+          this.queuePendingMessage(session.id, 'complete', data);
+        }
+      })
+    );
+
+    // Persistent error handler
+    proc.on(
+      'error',
+      createPersistentListener((data) => {
+        // Reset buffer on error
+        session.currentMessageBuffer = '';
+
+        if (!session.hasConnectedClient) {
+          this.queuePendingMessage(session.id, 'error', data);
+        }
+      })
+    );
+
+    // Persistent cancelled handler
+    proc.on(
+      'cancelled',
+      createPersistentListener(() => {
+        // Reset buffer on cancellation
+        session.currentMessageBuffer = '';
+
+        if (!session.hasConnectedClient) {
+          this.queuePendingMessage(session.id, 'cancelled', {});
+        }
+      })
+    );
+
+    // Persistent tool_use handler
+    proc.on(
+      'tool_use',
+      createPersistentListener((data) => {
+        if (!session.hasConnectedClient) {
+          this.queuePendingMessage(session.id, 'tool_use', data);
+        }
+      })
+    );
+
+    // Persistent agent_start handler
+    proc.on(
+      'agent_start',
+      createPersistentListener((data) => {
+        if (!session.hasConnectedClient) {
+          this.queuePendingMessage(session.id, 'agent_start', data);
+        }
+      })
+    );
+
+    // Persistent task_notification handler
+    proc.on(
+      'task_notification',
+      createPersistentListener((data) => {
+        if (!session.hasConnectedClient) {
+          this.queuePendingMessage(session.id, 'task_notification', data);
+        }
+      })
+    );
+
+    // Persistent permission_request handler - these need special handling
+    // We queue them but they may timeout if user doesn't reconnect
+    proc.on(
+      'permission_request',
+      createPersistentListener((data) => {
+        if (!session.hasConnectedClient) {
+          this.queuePendingMessage(session.id, 'permission_request', data);
+        }
+      })
+    );
+
+    // Persistent prompt handler
+    proc.on(
+      'prompt',
+      createPersistentListener((data) => {
+        if (!session.hasConnectedClient) {
+          this.queuePendingMessage(session.id, 'prompt', data);
+        }
+      })
+    );
+
+    // Persistent exit_plan_mode_request handler
+    proc.on(
+      'exit_plan_mode_request',
+      createPersistentListener((data) => {
+        if (!session.hasConnectedClient) {
+          this.queuePendingMessage(session.id, 'exit_plan_mode_request', data);
+        }
+      })
+    );
+
+    console.log(`[SessionManager] Persistent listeners set up for session ${session.id}`);
+  }
+
+  /**
+   * Queue a message for delivery when client reconnects.
+   *
+   * @param {string} sessionId - Session ID
+   * @param {string} messageType - Type of message
+   * @param {object} data - Message data
+   */
+  queuePendingMessage(sessionId, messageType, data) {
+    try {
+      sessionDatabase.addPendingMessage(sessionId, messageType, data);
+    } catch (err) {
+      console.error(`Error queuing pending message for session ${sessionId}:`, err.message);
+    }
+  }
+
+  /**
+   * Get pending messages for a session (called when client reconnects).
+   *
+   * @param {string} sessionId - Session ID
+   * @returns {Array} Array of pending messages
+   */
+  getPendingMessages(sessionId) {
+    try {
+      return sessionDatabase.getPendingMessages(sessionId);
+    } catch (err) {
+      console.error(`Error getting pending messages for session ${sessionId}:`, err.message);
+      return [];
+    }
+  }
+
+  /**
+   * Mark pending messages as delivered and clean them up.
+   *
+   * @param {string} sessionId - Session ID
+   * @param {number[]} messageIds - Array of message IDs to mark as delivered
+   */
+  markMessagesDelivered(sessionId, messageIds) {
+    try {
+      sessionDatabase.markMessagesDelivered(sessionId, messageIds);
+      sessionDatabase.clearPendingMessages(sessionId);
+    } catch (err) {
+      console.error(`Error marking messages delivered for session ${sessionId}:`, err.message);
+    }
+  }
+
+  /**
+   * Set the client connection status for a session.
+   *
+   * @param {string} sessionId - Session ID
+   * @param {boolean} connected - Whether a client is connected
+   */
+  setClientConnected(sessionId, connected) {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.hasConnectedClient = connected;
+      console.log(
+        `[SessionManager] Client ${connected ? 'connected' : 'disconnected'} for session ${sessionId}`
+      );
+    }
+  }
+
+  /**
+   * Check if a session has a connected client.
+   *
+   * @param {string} sessionId - Session ID
+   * @returns {boolean} Whether a client is connected
+   */
+  hasConnectedClient(sessionId) {
+    const session = this.sessions.get(sessionId);
+    return session ? session.hasConnectedClient : false;
   }
 }
 
