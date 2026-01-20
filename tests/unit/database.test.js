@@ -4,7 +4,7 @@
  * Tests the SQLite database layer for session persistence.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
@@ -13,8 +13,8 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEST_DB_PATH = path.join(__dirname, '..', '..', 'data-test', 'test-sessions.db');
 
-// Import the class directly to create isolated instances
-import { SessionDatabase } from '../../src/database.js';
+// Note: SessionDatabase class exists in '../../src/database.js' but we test
+// directly against the database schema to avoid singleton interference
 
 /**
  * Create a fresh database instance for testing
@@ -409,7 +409,6 @@ describe('SessionDatabase', () => {
   describe('Cleanup Operations', () => {
     it('should cleanup expired sessions', () => {
       const now = Date.now();
-      const oneHourAgo = now - 3600000;
       const twoHoursAgo = now - 7200000;
 
       // Recent session (should stay active)

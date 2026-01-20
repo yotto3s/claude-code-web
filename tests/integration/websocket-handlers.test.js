@@ -4,8 +4,13 @@
  * Tests the WebSocket message handling logic.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createMockWebSocket, createMockSession } from '../fixtures/mock-data.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  createMockWebSocket,
+  createMockSession,
+  createMockTerminal,
+  createMockTerminalList,
+} from '../fixtures/mock-data.js';
 
 describe('WebSocket Message Handlers', () => {
   let mockWs;
@@ -56,6 +61,7 @@ describe('WebSocket Message Handlers', () => {
           webSearchEnabled: false,
         },
         history: [],
+        terminals: [], // New: terminals list included on session join
       };
 
       mockWs.send(JSON.stringify(message));
@@ -63,6 +69,30 @@ describe('WebSocket Message Handlers', () => {
       expect(mockWs.messages[0].type).toBe('session_joined');
       expect(mockWs.messages[0].session.mode).toBe('plan');
       expect(mockWs.messages[0].history).toEqual([]);
+      expect(mockWs.messages[0].terminals).toEqual([]);
+    });
+
+    it('should handle session_joined with existing terminals', () => {
+      const session = createMockSession();
+      const terminals = createMockTerminalList(session.id, 2);
+      const message = {
+        type: 'session_joined',
+        session: {
+          id: session.id,
+          name: session.name,
+          mode: 'plan',
+          webSearchEnabled: false,
+        },
+        history: [],
+        terminals: terminals,
+      };
+
+      mockWs.send(JSON.stringify(message));
+
+      expect(mockWs.messages[0].type).toBe('session_joined');
+      expect(mockWs.messages[0].terminals).toHaveLength(2);
+      expect(mockWs.messages[0].terminals[0].id).toBeDefined();
+      expect(mockWs.messages[0].terminals[0].name).toBeDefined();
     });
 
     it('should handle sessions_list message format', () => {
@@ -327,16 +357,21 @@ describe('WebSocket Message Handlers', () => {
   });
 
   describe('Terminal Event Formats', () => {
-    it('should handle terminal_created format', () => {
+    it('should handle terminal_created format with name', () => {
+      const terminal = createMockTerminal({ id: 'term-abc', name: 'Terminal 1' });
       const message = {
         type: 'terminal_created',
-        terminalId: 'term-abc',
+        terminalId: terminal.id,
+        name: terminal.name,
+        cwd: terminal.cwd,
       };
 
       mockWs.send(JSON.stringify(message));
 
       expect(mockWs.messages[0].type).toBe('terminal_created');
       expect(mockWs.messages[0].terminalId).toBe('term-abc');
+      expect(mockWs.messages[0].name).toBe('Terminal 1');
+      expect(mockWs.messages[0].cwd).toBe(terminal.cwd);
     });
 
     it('should handle terminal_data format', () => {
@@ -363,6 +398,49 @@ describe('WebSocket Message Handlers', () => {
 
       expect(mockWs.messages[0].type).toBe('terminal_exit');
       expect(mockWs.messages[0].exitCode).toBe(0);
+    });
+
+    it('should handle terminal_closed format', () => {
+      const message = {
+        type: 'terminal_closed',
+        terminalId: 'term-abc',
+        success: true,
+      };
+
+      mockWs.send(JSON.stringify(message));
+
+      expect(mockWs.messages[0].type).toBe('terminal_closed');
+      expect(mockWs.messages[0].terminalId).toBe('term-abc');
+      expect(mockWs.messages[0].success).toBe(true);
+    });
+
+    it('should handle terminals_list format', () => {
+      const terminals = createMockTerminalList('session-123', 3);
+      const message = {
+        type: 'terminals_list',
+        sessionId: 'session-123',
+        terminals: terminals,
+      };
+
+      mockWs.send(JSON.stringify(message));
+
+      expect(mockWs.messages[0].type).toBe('terminals_list');
+      expect(mockWs.messages[0].sessionId).toBe('session-123');
+      expect(mockWs.messages[0].terminals).toHaveLength(3);
+    });
+
+    it('should handle terminals_list with empty list', () => {
+      const message = {
+        type: 'terminals_list',
+        sessionId: null,
+        terminals: [],
+      };
+
+      mockWs.send(JSON.stringify(message));
+
+      expect(mockWs.messages[0].type).toBe('terminals_list');
+      expect(mockWs.messages[0].sessionId).toBeNull();
+      expect(mockWs.messages[0].terminals).toEqual([]);
     });
   });
 });

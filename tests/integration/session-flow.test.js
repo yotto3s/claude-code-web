@@ -438,7 +438,7 @@ describe('Session Flow Integration', () => {
     it('should load sessions from database on restart', () => {
       // Create sessions
       const session1 = manager.createSession('/project1', 'Project 1');
-      const session2 = manager.createSession('/project2', 'Project 2');
+      manager.createSession('/project2', 'Project 2');
       manager.addMessage(session1.id, 'user', 'Hello');
       manager.addAllowedTool(session1.id, 'Bash');
 
@@ -465,6 +465,149 @@ describe('Session Flow Integration', () => {
       newManager.loadFromDatabase();
 
       expect(newManager.listSessions()).toHaveLength(0);
+    });
+  });
+
+  describe('Terminal Integration', () => {
+    // Mock terminal manager for testing session-terminal relationship
+    let mockTerminalManager;
+
+    beforeEach(() => {
+      // Create a mock terminal manager that tracks terminals by session
+      mockTerminalManager = {
+        terminals: new Map(),
+
+        createTerminal(terminalId, ownerSessionId, cwd, _username, name) {
+          const terminal = {
+            terminalId,
+            ownerSessionId,
+            cwd,
+            name: name || 'Terminal',
+            isActive: true,
+          };
+          this.terminals.set(terminalId, terminal);
+          return terminal;
+        },
+
+        getTerminalsForSession(sessionId) {
+          return Array.from(this.terminals.values()).filter(
+            (t) => t.ownerSessionId === sessionId
+          );
+        },
+
+        getTerminalListForSession(sessionId) {
+          return this.getTerminalsForSession(sessionId).map((t) => ({
+            id: t.terminalId,
+            name: t.name,
+            cwd: t.cwd,
+            isConnected: t.isActive,
+          }));
+        },
+
+        terminateTerminal(terminalId) {
+          const terminal = this.terminals.get(terminalId);
+          if (terminal) {
+            this.terminals.delete(terminalId);
+            return true;
+          }
+          return false;
+        },
+
+        terminateSessionTerminals(sessionId) {
+          const terminals = this.getTerminalsForSession(sessionId);
+          let count = 0;
+          for (const terminal of terminals) {
+            this.terminateTerminal(terminal.terminalId);
+            count++;
+          }
+          return count;
+        },
+      };
+    });
+
+    it('should associate terminals with sessions', () => {
+      const session = manager.createSession('/project', 'My Session');
+
+      // Create terminals for the session
+      mockTerminalManager.createTerminal('term-1', session.id, '/project', 'user', 'Terminal 1');
+      mockTerminalManager.createTerminal('term-2', session.id, '/project', 'user', 'Terminal 2');
+
+      const terminals = mockTerminalManager.getTerminalsForSession(session.id);
+      expect(terminals).toHaveLength(2);
+      expect(terminals[0].ownerSessionId).toBe(session.id);
+    });
+
+    it('should get terminal list for client', () => {
+      const session = manager.createSession('/project', 'My Session');
+      mockTerminalManager.createTerminal('term-1', session.id, '/project', 'user', 'Terminal 1');
+
+      const terminalList = mockTerminalManager.getTerminalListForSession(session.id);
+
+      expect(terminalList).toHaveLength(1);
+      expect(terminalList[0].id).toBe('term-1');
+      expect(terminalList[0].name).toBe('Terminal 1');
+      expect(terminalList[0].isConnected).toBe(true);
+    });
+
+    it('should cleanup terminals when session is terminated', () => {
+      const session = manager.createSession('/project', 'My Session');
+      mockTerminalManager.createTerminal('term-1', session.id, '/project', 'user', 'Terminal 1');
+      mockTerminalManager.createTerminal('term-2', session.id, '/project', 'user', 'Terminal 2');
+
+      // Verify terminals exist
+      expect(mockTerminalManager.getTerminalsForSession(session.id)).toHaveLength(2);
+
+      // Terminate session and its terminals
+      mockTerminalManager.terminateSessionTerminals(session.id);
+      manager.terminateSession(session.id);
+
+      // Verify terminals are cleaned up
+      expect(mockTerminalManager.getTerminalsForSession(session.id)).toHaveLength(0);
+      expect(manager.getSession(session.id)).toBeUndefined();
+    });
+
+    it('should cleanup terminals when session is deleted', () => {
+      const session = manager.createSession('/project', 'My Session');
+      mockTerminalManager.createTerminal('term-1', session.id, '/project', 'user', 'Terminal 1');
+
+      // Delete session and its terminals
+      mockTerminalManager.terminateSessionTerminals(session.id);
+      manager.deleteSession(session.id);
+
+      // Verify both session and terminals are gone
+      expect(mockTerminalManager.getTerminalsForSession(session.id)).toHaveLength(0);
+      expect(manager.getSession(session.id)).toBeUndefined();
+    });
+
+    it('should cleanup terminals when session is reset', () => {
+      const session = manager.createSession('/project', 'My Session');
+      mockTerminalManager.createTerminal('term-1', session.id, '/project', 'user', 'Terminal 1');
+
+      // Reset session - should cleanup old terminals
+      mockTerminalManager.terminateSessionTerminals(session.id);
+      const newSession = manager.resetSession(session.id);
+
+      // Old session terminals should be gone
+      expect(mockTerminalManager.getTerminalsForSession(session.id)).toHaveLength(0);
+
+      // New session should have no terminals yet
+      expect(mockTerminalManager.getTerminalsForSession(newSession.id)).toHaveLength(0);
+    });
+
+    it('should not affect other sessions terminals on cleanup', () => {
+      const session1 = manager.createSession('/project1', 'Session 1');
+      const session2 = manager.createSession('/project2', 'Session 2');
+
+      mockTerminalManager.createTerminal('term-1', session1.id, '/project1', 'user', 'Terminal 1');
+      mockTerminalManager.createTerminal('term-2', session2.id, '/project2', 'user', 'Terminal 2');
+
+      // Terminate only session1
+      mockTerminalManager.terminateSessionTerminals(session1.id);
+      manager.terminateSession(session1.id);
+
+      // Session2 terminals should still exist
+      expect(mockTerminalManager.getTerminalsForSession(session2.id)).toHaveLength(1);
+      expect(mockTerminalManager.terminals.size).toBe(1);
     });
   });
 });

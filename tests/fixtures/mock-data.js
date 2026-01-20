@@ -87,7 +87,7 @@ export function createMockResponse() {
     return res;
   };
 
-  res.clearCookie = (name, options) => {
+  res.clearCookie = (name, _options) => {
     delete res.cookies[name];
     return res;
   };
@@ -151,4 +151,52 @@ export const sampleMessages = [
   { role: 'user', content: 'Hello!', timestamp: Date.now() - 60000 },
   { role: 'assistant', content: 'Hi there! How can I help?', timestamp: Date.now() - 55000 },
   { role: 'user', content: 'Can you help me with code?', timestamp: Date.now() - 50000 },
+];
+
+/**
+ * Create a mock terminal object
+ * @param {Object} overrides - Properties to override
+ * @returns {Object} Mock terminal
+ */
+export function createMockTerminal(overrides = {}) {
+  return {
+    id: 'term-' + Math.random().toString(36).substr(2, 9),
+    name: 'Terminal 1',
+    cwd: '/tmp/test',
+    isConnected: true,
+    ...overrides,
+  };
+}
+
+/**
+ * Create a list of mock terminals for a session
+ * @param {string} sessionId - Session ID that owns the terminals
+ * @param {number} count - Number of terminals to create
+ * @returns {Array} Array of mock terminals
+ */
+export function createMockTerminalList(sessionId, count = 2) {
+  return Array.from({ length: count }, (_, i) =>
+    createMockTerminal({
+      id: `term-${sessionId}-${i + 1}`,
+      name: `Terminal ${i + 1}`,
+    })
+  );
+}
+
+/**
+ * Sample terminal data for tests
+ */
+export const sampleTerminals = [
+  {
+    id: 'term-1',
+    name: 'Terminal 1',
+    cwd: '/home/user/project',
+    isConnected: true,
+  },
+  {
+    id: 'term-2',
+    name: 'Terminal 2',
+    cwd: '/home/user/project',
+    isConnected: false,
+  },
 ];
