@@ -195,7 +195,11 @@ async function handleMessage(ws, msg, ctx) {
       break;
 
     case 'terminal_close':
-      handleTerminalClose(ws, msg);
+      handleTerminalClose(ws, msg, getCurrentSession);
+      break;
+
+    case 'list_terminals':
+      handleListTerminals(ws, getCurrentSession);
       break;
 
     case 'set_mode':
@@ -281,6 +285,9 @@ function handleJoinSession(ws, msg, setSession) {
   setSession(session);
   setupSessionListeners(ws, session);
 
+  // Get terminals for this session
+  const terminals = terminalManager.getTerminalListForSession(session.id);
+
   // Send session info and history
   safeSend(ws, {
     type: 'session_joined',
@@ -294,6 +301,7 @@ function handleJoinSession(ws, msg, setSession) {
       recovered: session.persisted || false, // Let client know this was recovered
     },
     history: session.history,
+    terminals: terminals, // Include terminals list
   });
 }
 
@@ -346,6 +354,9 @@ function handleDeleteSession(ws, msg, getCurrentSession, setSession) {
     // Save working directory before deletion
     const workingDirectory = currentSession.workingDirectory;
 
+    // Cleanup terminals for the session being deleted
+    terminalManager.terminateSessionTerminals(msg.sessionId);
+
     // Delete the current session
     const deleteSuccess = sessionManager.removeSession(msg.sessionId);
     if (!deleteSuccess) {
@@ -371,6 +382,9 @@ function handleDeleteSession(ws, msg, getCurrentSession, setSession) {
     });
     return;
   }
+
+  // Cleanup terminals for the session being deleted
+  terminalManager.terminateSessionTerminals(msg.sessionId);
 
   // For non-current sessions, just delete
   const success = sessionManager.removeSession(msg.sessionId);
@@ -847,15 +861,49 @@ function handleTerminalCreate(ws, msg, getCurrentSession) {
     return;
   }
 
-  const terminalId = msg.terminalId || session.id;
+  const terminalId = msg.terminalId;
   const cwd = msg.cwd || session.workingDirectory;
   const username = ws.username || 'default';
+  const name = msg.name || `Terminal ${terminalManager.getTerminalsForSession(session.id).length + 1}`;
+
+  if (!terminalId) {
+    sendError(ws, 'Terminal ID is required');
+    return;
+  }
 
   // Check if terminal already exists
   let terminal = terminalManager.getTerminal(terminalId);
 
-  if (!terminal) {
-    terminal = terminalManager.createTerminal(terminalId, cwd, username);
+  if (terminal) {
+    // Terminal exists - verify it belongs to this session
+    if (terminal.ownerSessionId !== session.id) {
+      sendError(ws, 'Terminal belongs to a different session');
+      return;
+    }
+
+    // Re-attach event listeners for reconnection
+    terminal.removeAllListeners('data');
+    terminal.removeAllListeners('exit');
+
+    terminal.on('data', (data) => {
+      safeSend(ws, {
+        type: 'terminal_data',
+        terminalId: terminalId,
+        data: data,
+      });
+    });
+
+    terminal.on('exit', ({ exitCode, signal }) => {
+      safeSend(ws, {
+        type: 'terminal_exit',
+        terminalId: terminalId,
+        exitCode,
+        signal,
+      });
+    });
+  } else {
+    // Create new terminal bound to this session
+    terminal = terminalManager.createTerminal(terminalId, session.id, cwd, username, name);
 
     terminal.on('data', (data) => {
       safeSend(ws, {
@@ -880,6 +928,7 @@ function handleTerminalCreate(ws, msg, getCurrentSession) {
   safeSend(ws, {
     type: 'terminal_created',
     terminalId: terminalId,
+    name: terminal.name,
     cwd: terminal.cwd,
   });
 }
@@ -920,20 +969,52 @@ function handleTerminalResize(ws, msg) {
   terminal.resize(cols, rows);
 }
 
-function handleTerminalClose(ws, msg) {
+function handleTerminalClose(ws, msg, getCurrentSession) {
   const { terminalId } = msg;
+  const session = getCurrentSession();
 
   if (!terminalId) {
     sendError(ws, 'Terminal ID is required');
     return;
   }
 
-  const success = terminalManager.terminateSession(terminalId);
+  // Verify terminal belongs to current session
+  const terminal = terminalManager.getTerminal(terminalId);
+  if (terminal && session && terminal.ownerSessionId !== session.id) {
+    sendError(ws, 'Terminal belongs to a different session');
+    return;
+  }
+
+  const success = terminalManager.terminateTerminal(terminalId);
 
   safeSend(ws, {
     type: 'terminal_closed',
     terminalId: terminalId,
     success,
+  });
+}
+
+/**
+ * Handle request to list terminals for current session.
+ */
+function handleListTerminals(ws, getCurrentSession) {
+  const session = getCurrentSession();
+
+  if (!session) {
+    safeSend(ws, {
+      type: 'terminals_list',
+      sessionId: null,
+      terminals: [],
+    });
+    return;
+  }
+
+  const terminals = terminalManager.getTerminalListForSession(session.id);
+
+  safeSend(ws, {
+    type: 'terminals_list',
+    sessionId: session.id,
+    terminals: terminals,
   });
 }
 

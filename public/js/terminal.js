@@ -10,6 +10,7 @@ class TerminalManager {
     this.activeTerminalId = null;
     this.terminalCounter = 0;
     this.onTabChange = null; // Callback when tabs change
+    this.currentSessionId = null; // Track current session
   }
 
   initialize(container, tabsContainer, sendCallback) {
@@ -19,12 +20,82 @@ class TerminalManager {
     console.log('Terminal manager initialized');
   }
 
+  /**
+   * Set the current session context.
+   * Clears all existing terminals and resets state for the new session.
+   *
+   * @param {string|null} sessionId - The session ID to set, or null to clear
+   */
+  setSession(sessionId) {
+    // Clear all existing terminals first
+    this.clearTerminals();
+
+    // Set new session context
+    this.currentSessionId = sessionId;
+    this.terminalCounter = 0;
+
+    console.log('Terminal session context set to:', sessionId);
+  }
+
+  /**
+   * Clear all terminal instances without sending close messages.
+   * Used when switching sessions.
+   */
+  clearTerminals() {
+    for (const [_terminalId, terminalData] of this.terminals) {
+      if (terminalData.terminal) {
+        terminalData.terminal.dispose();
+      }
+      if (terminalData.resizeTimeout) {
+        clearTimeout(terminalData.resizeTimeout);
+      }
+    }
+
+    this.terminals.clear();
+    this.activeTerminalId = null;
+
+    // Clear tabs display
+    if (this.tabsContainer) {
+      this.tabsContainer.innerHTML = '';
+    }
+
+    // Clear terminal display area
+    if (this.container) {
+      this.container.innerHTML = '';
+    }
+
+    if (this.onTabChange) {
+      this.onTabChange();
+    }
+
+    console.log('All terminals cleared');
+  }
+
+  /**
+   * Restore terminals from a list (received from server on session join).
+   *
+   * @param {Array<{id: string, name: string, cwd: string, isConnected: boolean}>} terminalsList
+   */
+  restoreTerminals(terminalsList) {
+    if (!terminalsList || terminalsList.length === 0) {
+      console.log('No terminals to restore');
+      return;
+    }
+
+    console.log(`Restoring ${terminalsList.length} terminal(s)`);
+
+    for (const termInfo of terminalsList) {
+      // Create the terminal locally and request reconnection from server
+      this.createTerminal(termInfo.id, termInfo.cwd, termInfo.name);
+    }
+  }
+
   generateTerminalId() {
     this.terminalCounter++;
     return `term-${Date.now()}-${this.terminalCounter}`;
   }
 
-  createTerminal(terminalId, cwd) {
+  createTerminal(terminalId, cwd, name) {
     if (!this.sendCallback) {
       console.error('Terminal not initialized');
       return null;
@@ -41,6 +112,9 @@ class TerminalManager {
       this.switchToTerminal(terminalId);
       return terminalId;
     }
+
+    // Increment counter for default naming
+    this.terminalCounter++;
 
     console.log('Creating new terminal:', terminalId);
 
@@ -86,7 +160,7 @@ class TerminalManager {
       isConnected: false,
       resizeTimeout: null,
       cwd: cwd,
-      name: `Terminal ${this.terminalCounter}`,
+      name: name || `Terminal ${this.terminalCounter}`,
     };
 
     this.terminals.set(terminalId, terminalData);
@@ -122,6 +196,7 @@ class TerminalManager {
       type: 'terminal_create',
       terminalId: terminalId,
       cwd: cwd,
+      name: terminalData.name,
     });
 
     // Render tabs
@@ -203,7 +278,7 @@ class TerminalManager {
     }
   }
 
-  handleCreated(terminalId) {
+  handleCreated(terminalId, name) {
     const terminalData = this.terminals.get(terminalId);
     if (!terminalData) {
       console.error('Terminal data not found:', terminalId);
@@ -211,6 +286,13 @@ class TerminalManager {
     }
 
     terminalData.isConnected = true;
+
+    // Update name from server response if provided
+    if (name) {
+      terminalData.name = name;
+      this.renderTabs();
+    }
+
     console.log('Terminal created:', terminalId);
 
     // Write welcome message

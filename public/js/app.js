@@ -330,6 +330,9 @@ class App {
     // Sync mode with new session
     this.syncModeWithServer();
 
+    // Set session context on terminal manager (clears any existing terminals)
+    this.terminalManager.setSession(session.id);
+
     // If terminal is open, create terminal for new session
     if (this.elements.terminalPanel.classList.contains('show')) {
       this.ensureTerminalForCurrentSession();
@@ -364,8 +367,33 @@ class App {
 
     this.ws.listSessions();
 
-    // If terminal is open, switch to terminal for this session
-    if (this.elements.terminalPanel.classList.contains('show')) {
+    // Set session context on terminal manager (clears any existing terminals)
+    this.terminalManager.setSession(data.session.id);
+
+    // Restore terminals from server if any exist for this session
+    if (data.terminals && data.terminals.length > 0) {
+      // Initialize terminal manager if not already done
+      if (!this.terminalManager.container) {
+        this.terminalManager.initialize(
+          this.elements.terminalContainer,
+          this.elements.terminalTabs,
+          (msg) => this.ws.send(msg)
+        );
+      }
+      this.terminalManager.restoreTerminals(data.terminals);
+
+      // Show terminal panel if we have terminals
+      this.elements.terminalPanel.classList.add('show');
+      this.elements.terminalToggleBtn.classList.add('active');
+      this.elements.appContainer.classList.add('terminal-open');
+
+      // Fit terminals after a short delay
+      setTimeout(() => {
+        this.terminalManager.fit();
+      }, 100);
+    } else if (this.elements.terminalPanel.classList.contains('show')) {
+      // Terminal panel was open but no terminals for this session
+      // Optionally create a new terminal
       this.ensureTerminalForCurrentSession();
     }
   }
@@ -1296,7 +1324,7 @@ class App {
 
   onTerminalCreated(data) {
     console.log('Terminal created:', data);
-    this.terminalManager.handleCreated(data.terminalId);
+    this.terminalManager.handleCreated(data.terminalId, data.name);
   }
 
   onTerminalData(data) {
@@ -1360,6 +1388,14 @@ class App {
 
     // Update localStorage
     localStorage.setItem('sessionId', data.session.id);
+
+    // Set session context on terminal manager (clears terminals from old session)
+    this.terminalManager.setSession(data.session.id);
+
+    // If terminal panel was open, create a new terminal for the new session
+    if (this.elements.terminalPanel.classList.contains('show')) {
+      this.ensureTerminalForCurrentSession();
+    }
 
     // Refresh session lists
     this.ws.listSessions();

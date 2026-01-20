@@ -57,5 +57,14 @@ export default [
       },
     },
   },
+  {
+    files: ['tests/**/*.js', 'vitest.config.js'],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
   eslintConfigPrettier,
 ];

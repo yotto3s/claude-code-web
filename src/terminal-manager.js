@@ -30,18 +30,23 @@ class TerminalSession extends EventEmitter {
   /**
    * Create a new terminal session.
    *
-   * @param {string} sessionId - Unique session identifier
+   * @param {string} terminalId - Unique terminal identifier
+   * @param {string} ownerSessionId - The session ID that owns this terminal
    * @param {string} [cwd] - Working directory for the terminal
    * @param {string} [username] - Username for the session
+   * @param {string} [name] - Display name for the terminal
    */
-  constructor(sessionId, cwd, username) {
+  constructor(terminalId, ownerSessionId, cwd, username, name) {
     super();
-    this.sessionId = sessionId;
+    this.terminalId = terminalId;
+    this.ownerSessionId = ownerSessionId;
     this.cwd = cwd || process.cwd();
     this.username = username;
+    this.name = name || 'Terminal';
     this.ptyProcess = null;
     this.isActive = true;
     this.lastActivity = Date.now();
+    this.createdAt = Date.now();
   }
 
   start() {
@@ -129,69 +134,144 @@ class TerminalManager {
    * Starts automatic cleanup of inactive sessions every 5 minutes.
    */
   constructor() {
-    /** @type {Map<string, TerminalSession>} Map of session ID to terminal */
+    /** @type {Map<string, TerminalSession>} Map of terminal ID to terminal */
     this.terminals = new Map();
-    /** @type {number} Session timeout in ms (30 minutes) */
+    /** @type {number} Terminal timeout in ms (30 minutes) */
     this.sessionTimeoutMs = 30 * 60 * 1000;
     /** @type {number} Cleanup check interval in ms (5 minutes) */
     this.cleanupIntervalMs = 5 * 60 * 1000;
 
     // Start cleanup timer
     this.cleanupTimer = setInterval(() => {
-      this.cleanupInactiveSessions();
+      this.cleanupInactiveTerminals();
     }, this.cleanupIntervalMs);
   }
 
-  createTerminal(sessionId, cwd, username) {
-    const terminal = new TerminalSession(sessionId, cwd, username);
-    this.terminals.set(sessionId, terminal);
+  /**
+   * Create a new terminal for a session.
+   *
+   * @param {string} terminalId - Unique terminal identifier
+   * @param {string} ownerSessionId - The session ID that owns this terminal
+   * @param {string} [cwd] - Working directory for the terminal
+   * @param {string} [username] - Username for the session
+   * @param {string} [name] - Display name for the terminal
+   * @returns {TerminalSession} The created terminal session
+   */
+  createTerminal(terminalId, ownerSessionId, cwd, username, name) {
+    const terminal = new TerminalSession(terminalId, ownerSessionId, cwd, username, name);
+    this.terminals.set(terminalId, terminal);
 
     terminal.on('cleanup', () => {
-      this.terminals.delete(sessionId);
+      this.terminals.delete(terminalId);
     });
 
-    console.log(`Terminal created for session ${sessionId} in ${cwd}`);
+    console.log(`Terminal ${terminalId} created for session ${ownerSessionId} in ${cwd}`);
     return terminal;
   }
 
-  getTerminal(sessionId) {
-    return this.terminals.get(sessionId);
+  /**
+   * Get a terminal by its ID.
+   *
+   * @param {string} terminalId - Terminal ID to look up
+   * @returns {TerminalSession|undefined} The terminal session if found
+   */
+  getTerminal(terminalId) {
+    return this.terminals.get(terminalId);
   }
 
-  terminateSession(sessionId) {
-    const terminal = this.terminals.get(sessionId);
+  /**
+   * Get all terminals belonging to a specific session.
+   *
+   * @param {string} sessionId - The owner session ID
+   * @returns {TerminalSession[]} Array of terminals for the session
+   */
+  getTerminalsForSession(sessionId) {
+    const terminals = [];
+    for (const terminal of this.terminals.values()) {
+      if (terminal.ownerSessionId === sessionId) {
+        terminals.push(terminal);
+      }
+    }
+    return terminals;
+  }
+
+  /**
+   * Get terminal info list for a session (for sending to client).
+   *
+   * @param {string} sessionId - The owner session ID
+   * @returns {Array<{id: string, name: string, cwd: string}>} Terminal info list
+   */
+  getTerminalListForSession(sessionId) {
+    return this.getTerminalsForSession(sessionId).map((terminal) => ({
+      id: terminal.terminalId,
+      name: terminal.name,
+      cwd: terminal.cwd,
+      isConnected: terminal.isActive && terminal.ptyProcess !== null,
+    }));
+  }
+
+  /**
+   * Terminate a specific terminal.
+   *
+   * @param {string} terminalId - Terminal ID to terminate
+   * @returns {boolean} True if terminal was found and terminated
+   */
+  terminateTerminal(terminalId) {
+    const terminal = this.terminals.get(terminalId);
     if (terminal) {
       terminal.destroy();
-      this.terminals.delete(sessionId);
-      console.log(`Terminal session ${sessionId} terminated`);
+      this.terminals.delete(terminalId);
+      console.log(`Terminal ${terminalId} terminated`);
       return true;
     }
     return false;
   }
 
-  cleanupInactiveSessions() {
-    const now = Date.now();
-    const sessionsToRemove = [];
+  /**
+   * Terminate all terminals belonging to a session.
+   *
+   * @param {string} sessionId - The owner session ID
+   * @returns {number} Number of terminals terminated
+   */
+  terminateSessionTerminals(sessionId) {
+    const terminals = this.getTerminalsForSession(sessionId);
+    let count = 0;
+    for (const terminal of terminals) {
+      this.terminateTerminal(terminal.terminalId);
+      count++;
+    }
+    if (count > 0) {
+      console.log(`Terminated ${count} terminals for session ${sessionId}`);
+    }
+    return count;
+  }
 
-    for (const [sessionId, terminal] of this.terminals.entries()) {
+  cleanupInactiveTerminals() {
+    const now = Date.now();
+    const terminalsToRemove = [];
+
+    for (const [terminalId, terminal] of this.terminals.entries()) {
       if (now - terminal.lastActivity > this.sessionTimeoutMs) {
-        sessionsToRemove.push(sessionId);
+        terminalsToRemove.push(terminalId);
       }
     }
 
-    for (const sessionId of sessionsToRemove) {
-      console.log(`Cleaning up inactive terminal session: ${sessionId}`);
-      this.terminateSession(sessionId);
+    for (const terminalId of terminalsToRemove) {
+      console.log(`Cleaning up inactive terminal: ${terminalId}`);
+      this.terminateTerminal(terminalId);
     }
   }
 
-  listSessions() {
+  listTerminals() {
     return Array.from(this.terminals.values()).map((terminal) => ({
-      sessionId: terminal.sessionId,
+      terminalId: terminal.terminalId,
+      ownerSessionId: terminal.ownerSessionId,
+      name: terminal.name,
       cwd: terminal.cwd,
       username: terminal.username,
       isActive: terminal.isActive,
       lastActivity: terminal.lastActivity,
+      createdAt: terminal.createdAt,
     }));
   }
 
@@ -201,7 +281,7 @@ class TerminalManager {
       this.cleanupTimer = null;
     }
 
-    for (const [_sessionId, terminal] of this.terminals.entries()) {
+    for (const terminal of this.terminals.values()) {
       terminal.destroy();
     }
     this.terminals.clear();

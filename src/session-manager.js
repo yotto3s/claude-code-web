@@ -15,6 +15,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { ClaudeProcess } = require('./claude-process');
 const { sessionDatabase } = require('./database');
+const { terminalManager } = require('./terminal-manager');
 
 /** @type {number} Maximum concurrent sessions (default: 5) */
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || '5', 10);
@@ -164,6 +165,9 @@ class SessionManager {
     }
 
     console.log(`Created session ${id} (${session.name})`);
+
+    // Send initial prompt to read all markdown files
+    this.sendInitialPrompt(session);
 
     return session;
   }
@@ -420,6 +424,9 @@ class SessionManager {
       session.process.terminate();
     }
 
+    // Cleanup any terminals associated with this session
+    terminalManager.terminateSessionTerminals(id);
+
     // Mark as inactive in database (keep history)
     try {
       sessionDatabase.deactivateSession(id);
@@ -440,6 +447,9 @@ class SessionManager {
     if (session && session.process) {
       session.process.terminate();
     }
+
+    // Cleanup any terminals associated with this session
+    terminalManager.terminateSessionTerminals(id);
 
     // Remove from memory
     this.sessions.delete(id);
@@ -509,6 +519,32 @@ class SessionManager {
 
   getSessionCount() {
     return this.sessions.size;
+  }
+
+  /**
+   * Send initial prompt to read all markdown files in the project.
+   * Called automatically when a new session is created to help Claude
+   * understand the project context.
+   *
+   * @param {object} session - The session object
+   */
+  sendInitialPrompt(session) {
+    const initialPrompt = `Please read all markdown files in this project to understand it. Use the Glob tool to find all files matching "**/*.md", then read each one to build a comprehensive understanding of this project's structure, purpose, documentation, and how it works. After reading all the markdown files, provide a brief summary of what this project is about.`;
+
+    // Small delay to ensure WebSocket listeners are set up on the client
+    setTimeout(() => {
+      if (session.process) {
+        session.process.sendMessage(initialPrompt);
+
+        // Add the initial prompt to history
+        this.addToHistory(session.id, {
+          role: 'user',
+          content: initialPrompt,
+        });
+
+        console.log(`[SessionManager] Sent initial prompt to read markdown files for session ${session.id}`);
+      }
+    }, 100);
   }
 }
 
