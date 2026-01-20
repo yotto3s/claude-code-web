@@ -155,6 +155,7 @@ SQLite persistence layer using better-sqlite3:
 
 - `sessions` - Session metadata (id, name, working_directory, mode, timestamps, is_active)
 - `messages` - Message history (session_id, role, content, timestamp)
+- `pending_messages` - Offline message queue (session_id, message_type, data, timestamp, delivered)
 
 **Features:**
 
@@ -162,6 +163,7 @@ SQLite persistence layer using better-sqlite3:
 - Periodic WAL checkpoints (every 5 minutes)
 - Automatic cleanup of expired sessions
 - Foreign key constraints for data integrity
+- Offline message persistence for disconnected clients
 
 ### 6. Claude Process (`src/claude-process.js`)
 
@@ -530,6 +532,48 @@ canUseTool: async (toolName, input, options) => {
 
 - `AskUserQuestion` - Emits `prompt` event, waits for user answers via `prompt_response`
 - `ExitPlanMode` - In plan mode, emits `exit_plan_mode_request`, requires user approval
+
+## Offline Message System
+
+When a user disconnects from a session, Claude continues processing and messages are captured:
+
+**Architecture:**
+
+```
+User Connected:
+  Claude Process → Persistent Listeners → History + WebSocket Listeners → Client
+
+User Disconnected:
+  Claude Process → Persistent Listeners → History + Pending Message Queue (SQLite)
+
+User Reconnects:
+  1. Load session with history
+  2. Retrieve pending messages from database
+  3. Send pending messages to client
+  4. Mark messages as delivered
+  5. Re-attach WebSocket listeners
+```
+
+**Key Components:**
+
+- **Persistent Listeners** (`session-manager.js`): Listeners marked with `_persistent = true` that capture all messages regardless of client connection status
+- **Pending Message Queue** (`database.js`): SQLite table storing messages generated while user is disconnected
+- **Connection Tracking**: `hasConnectedClient` flag on each session to determine whether to queue messages
+- **Message Delivery** (`websocket.js`): On `join_session`, pending messages are retrieved and sent to client
+
+**Captured Message Types:**
+
+- `chunk` - Streaming text content
+- `result` - Final result
+- `complete` - Message complete
+- `error` - Error occurred
+- `cancelled` - Operation cancelled
+- `tool_use` - Tool execution
+- `agent_start` - Agent task started
+- `task_notification` - Background task completed
+- `permission_request` - Tool needs approval
+- `prompt` - AskUserQuestion
+- `exit_plan_mode_request` - Plan mode exit
 
 ## Security Considerations
 

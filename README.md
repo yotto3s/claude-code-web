@@ -8,6 +8,7 @@ A web-based interface for Claude Code CLI that enables browser access to Claude'
 - **Integrated Terminal**: Full PTY terminal access alongside Claude conversations (via node-pty)
 - **Streaming Responses**: Real-time streaming of Claude's responses via Claude Agent SDK
 - **Session Persistence**: Sessions and message history persist across server restarts (SQLite)
+- **Offline Message Queue**: Messages generated while user is disconnected are queued and delivered on reconnect
 - **Session Management**: Multiple concurrent Claude sessions with automatic cleanup
 - **Agent System**: Track and manage background agents (Explore, Plan, Bash, etc.)
 - **Operating Modes**: Default, Accept Edits (auto-approve file changes), and Plan (read-only)
@@ -373,6 +374,7 @@ Sessions and message history are persisted to a SQLite database:
   - Sessions auto-recover when user rejoins
   - WAL mode for better concurrent access
   - Automatic cleanup of expired sessions (1-hour timeout by default)
+  - **Offline message queue**: When user disconnects, Claude continues processing and messages are queued for delivery when the user reconnects
 
 ## Dependencies
 

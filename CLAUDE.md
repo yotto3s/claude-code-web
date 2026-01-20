@@ -47,10 +47,10 @@ Browser -> Gateway (Docker:3000) -> Host Server (Node.js:3001)
 
 - `pam-auth.js` - PAM authentication using Python's crypt module (supports yescrypt, SHA-512, SHA-256, MD5)
 - `claude-process.js` - Wraps Claude Agent SDK `query()` with `canUseTool` callback for permission handling
-- `session-manager.js` - Session lifecycle (max 5 concurrent, 1-hour timeout) with SQLite persistence
+- `session-manager.js` - Session lifecycle (max 5 concurrent, 1-hour timeout) with SQLite persistence, persistent listeners for offline message capture
 - `terminal-manager.js` - PTY terminal management via node-pty
-- `websocket.js` - Real-time bidirectional communication
-- `database.js` - SQLite persistence using better-sqlite3 (WAL mode)
+- `websocket.js` - Real-time bidirectional communication, offline message delivery on reconnect
+- `database.js` - SQLite persistence using better-sqlite3 (WAL mode), pending messages queue
 
 **Frontend in `public/`:**
 
@@ -118,6 +118,7 @@ queryInstance = query({
 - **Ubuntu 24.04 required** for gateway Docker image (yescrypt password hash support)
 - **Node.js 20+ required** on host
 - **Session persistence**: Sessions and message history are persisted to SQLite (`data/sessions.db`)
+- **Offline message queue**: Claude continues processing when user disconnects; messages are queued and delivered on reconnect
 - Sessions auto-recover when user rejoins after server restart
 - No automated test suite exists
 - Docker network: Gateway connects to host via `172.17.0.1` (Linux) or `host.docker.internal` (macOS/Windows)
